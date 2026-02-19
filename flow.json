@@ -2,37 +2,31 @@
 	"contracts": {
 		"ChamaCircle": "cadence/contracts/ChamaCircle.cdc",
 		"ChamaScheduler": "cadence/contracts/ChamaScheduler.cdc",
-		"ChamaManager": "cadence/contracts/ChamaManager.cdc"
-	},
-	"dependencies": {
-		"FlowToken": {
-			"source": "emulator",
+		"ChamaManager": "cadence/contracts/ChamaManager.cdc",
+		"FungibleToken": {
 			"aliases": {
-				"emulator": "0x0ae53cb6e3f42a79",
-				"testnet": "0x7e60df042a9c0868",
-				"mainnet": "0x1654653399040a61"
+				"emulator": "ee82856bf20e2aa6",
+				"testnet": "9a0766d93b6608b7",
+				"mainnet": "f233dcee88fe0abe"
 			}
 		},
-		"FungibleToken": {
-			"source": "emulator",
+		"FlowToken": {
 			"aliases": {
-				"emulator": "0xee82856bf20e2aa6",
-				"testnet": "0x9a0766d93b6608b7",
-				"mainnet": "0xf233dcee88fe0abe"
+				"emulator": "0ae53cb6e3f42a79",
+				"testnet": "7e60df042a9c0868",
+				"mainnet": "1654653399040a61"
 			}
 		},
 		"FlowTransactionScheduler": {
-			"source": "emulator",
 			"aliases": {
-				"emulator": "0xf8d6e0586b0a20c7",
-				"testnet": "0x8c5303eaa26202d6"
+				"emulator": "f8d6e0586b0a20c7",
+				"testnet": "8c5303eaa26202d6"
 			}
 		},
 		"FlowTransactionSchedulerUtils": {
-			"source": "emulator",
 			"aliases": {
-				"emulator": "0xf8d6e0586b0a20c7",
-				"testnet": "0x8c5303eaa26202d6"
+				"emulator": "f8d6e0586b0a20c7",
+				"testnet": "8c5303eaa26202d6"
 			}
 		}
 	},
