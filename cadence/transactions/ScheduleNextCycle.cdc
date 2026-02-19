@@ -115,14 +115,20 @@ transaction(circleId: UInt64, cycleDuration: UFix64) {
 
         // ── Schedule the transaction ──
         //
-        // After this call, the Flow protocol will:
+        // schedule() returns a @ScheduledTransaction resource.
+        // In Cadence, resources MUST be explicitly handled — you can't
+        // ignore a return value that's a resource type (linear types).
+        //
+        // We store it in the signer's account so we can:
+        //   1. Query its status later (scheduledTx.status())
+        //   2. Track which scheduled txs belong to which circle
+        //   3. Satisfy Cadence's "no resource loss" rule
+        //
+        // After scheduling, the Flow protocol will:
         //   1. Hold the fee payment
         //   2. At targetTimestamp, call handlerCap.executeTransaction(id, data)
         //   3. Emit FlowTransactionScheduler.Executed event
-        //
-        // The handler then calls circle.executeCycle() which handles
-        // the payout, penalties, and cycle advancement.
-        FlowTransactionScheduler.schedule(
+        let scheduledTx <- FlowTransactionScheduler.schedule(
             handlerCap: handlerCap,
             data: nil,
             timestamp: targetTimestamp,
@@ -130,5 +136,19 @@ transaction(circleId: UInt64, cycleDuration: UFix64) {
             executionEffort: 10000,
             fees: <- fees
         )
+
+        // Store the scheduled transaction receipt in the signer's account.
+        // Path: /storage/chamaScheduledTx_{circleId}
+        // This lets us check status or cancel if needed.
+        let scheduledTxPath = StoragePath(identifier: "chamaScheduledTx_".concat(circleId.toString()))
+            ?? panic("Could not create scheduled tx storage path")
+
+        // If there's a previous scheduled tx at this path (from a prior cycle),
+        // we need to remove it first to avoid storage collision.
+        if let oldTx <- signer.storage.load<@FlowTransactionScheduler.ScheduledTransaction>(from: scheduledTxPath) {
+            destroy oldTx
+        }
+
+        signer.storage.save(<- scheduledTx, to: scheduledTxPath)
     }
 }
