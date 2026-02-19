@@ -100,7 +100,7 @@ transaction(circleId: UInt64, cycleDuration: UFix64) {
             data: nil,
             timestamp: targetTimestamp,
             priority: FlowTransactionScheduler.Priority.Medium,
-            executionEffort: 10000
+            executionEffort: 9999
         )
 
         // ── Pay scheduling fee ──
@@ -133,7 +133,7 @@ transaction(circleId: UInt64, cycleDuration: UFix64) {
             data: nil,
             timestamp: targetTimestamp,
             priority: FlowTransactionScheduler.Priority.Medium,
-            executionEffort: 10000,
+            executionEffort: 9999,
             fees: <- fees
         )
 
