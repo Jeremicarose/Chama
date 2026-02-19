@@ -4,7 +4,7 @@
 		"ChamaManager": "cadence/contracts/ChamaManager.cdc",
 		"ChamaScheduler": "cadence/contracts/ChamaScheduler.cdc",
 		"FlowToken": {
-			"source": "",
+			"source": "cadence/contracts/imports/FlowToken.cdc",
 			"aliases": {
 				"emulator": "0ae53cb6e3f42a79",
 				"mainnet": "1654653399040a61",
@@ -12,21 +12,21 @@
 			}
 		},
 		"FlowTransactionScheduler": {
-			"source": "",
+			"source": "cadence/contracts/imports/FlowTransactionScheduler.cdc",
 			"aliases": {
 				"emulator": "f8d6e0586b0a20c7",
 				"testnet": "8c5303eaa26202d6"
 			}
 		},
 		"FlowTransactionSchedulerUtils": {
-			"source": "",
+			"source": "cadence/contracts/imports/FlowTransactionScheduler.cdc",
 			"aliases": {
 				"emulator": "f8d6e0586b0a20c7",
 				"testnet": "8c5303eaa26202d6"
 			}
 		},
 		"FungibleToken": {
-			"source": "",
+			"source": "cadence/contracts/imports/FungibleToken.cdc",
 			"aliases": {
 				"emulator": "ee82856bf20e2aa6",
 				"mainnet": "f233dcee88fe0abe",
