@@ -1,39 +1,43 @@
 {
 	"contracts": {
 		"ChamaCircle": "cadence/contracts/ChamaCircle.cdc",
-		"ChamaScheduler": "cadence/contracts/ChamaScheduler.cdc",
 		"ChamaManager": "cadence/contracts/ChamaManager.cdc",
-		"FungibleToken": {
-			"aliases": {
-				"emulator": "ee82856bf20e2aa6",
-				"testnet": "9a0766d93b6608b7",
-				"mainnet": "f233dcee88fe0abe"
-			}
-		},
+		"ChamaScheduler": "cadence/contracts/ChamaScheduler.cdc",
 		"FlowToken": {
+			"source": "",
 			"aliases": {
 				"emulator": "0ae53cb6e3f42a79",
-				"testnet": "7e60df042a9c0868",
-				"mainnet": "1654653399040a61"
+				"mainnet": "1654653399040a61",
+				"testnet": "7e60df042a9c0868"
 			}
 		},
 		"FlowTransactionScheduler": {
+			"source": "",
 			"aliases": {
 				"emulator": "f8d6e0586b0a20c7",
 				"testnet": "8c5303eaa26202d6"
 			}
 		},
 		"FlowTransactionSchedulerUtils": {
+			"source": "",
 			"aliases": {
 				"emulator": "f8d6e0586b0a20c7",
 				"testnet": "8c5303eaa26202d6"
+			}
+		},
+		"FungibleToken": {
+			"source": "",
+			"aliases": {
+				"emulator": "ee82856bf20e2aa6",
+				"mainnet": "f233dcee88fe0abe",
+				"testnet": "9a0766d93b6608b7"
 			}
 		}
 	},
 	"networks": {
 		"emulator": "127.0.0.1:3569",
-		"testnet": "access.devnet.nodes.onflow.org:9000",
-		"mainnet": "access.mainnet.nodes.onflow.org:9000"
+		"mainnet": "access.mainnet.nodes.onflow.org:9000",
+		"testnet": "access.devnet.nodes.onflow.org:9000"
 	},
 	"accounts": {
 		"emulator-account": {
