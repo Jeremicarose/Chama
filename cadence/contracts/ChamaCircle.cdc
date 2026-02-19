@@ -284,16 +284,17 @@ access(all) contract ChamaCircle {
         /// deposit.balance must be >= contributionAmount. The deposit is
         /// locked for the entire circle duration.
         access(all) fun join(member: Address, deposit: @FlowToken.Vault) {
-            pre {
+                    pre {
                 self.status == CircleStatus.FORMING:
-                    "Circle is not accepting members (status: ".concat(self.status.rawValue.toString()).concat(")")
+                    "Circle is not accepting members (status: \(self.status.rawValue))"
                 self.members[member] == nil:
                     "Address already a member of this circle"
                 UInt64(self.memberOrder.length) < self.config.maxMembers:
-                    "Circle is full (".concat(self.config.maxMembers.toString()).concat(" members max)")
+                    "Circle is full (\(self.config.maxMembers) members max)"
                 deposit.balance >= self.config.contributionAmount:
-                    "Deposit must be at least ".concat(self.config.contributionAmount.toString()).concat(" FLOW")
+                    "Deposit must be at least \(self.config.contributionAmount) FLOW"
             }
+
 
             // Assign rotation position based on join order.
             // Position 0 receives payout in cycle 1, position 1 in cycle 2, etc.
