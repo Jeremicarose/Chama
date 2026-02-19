@@ -3,26 +3,27 @@
 // ============================================================================
 //
 // WHAT THIS DOES:
-//   1. Creates a ChamaTransactionHandler resource tied to a specific circle
-//   2. Stores it in the signer's account
-//   3. Issues capabilities for the FlowTransactionScheduler to call it
+//   1. Issues a Capability<&ChamaCircle.Circle> for the circle's storage path
+//   2. Creates a ChamaTransactionHandler with that capability
+//   3. Stores the handler in the signer's account
+//   4. Issues Execute-entitled capability for FlowTransactionScheduler
 //
 // WHEN TO CALL:
 //   After the circle seals (all members joined, status = ACTIVE).
-//   This MUST happen before ScheduleNextCycle.cdc — you can't schedule
-//   a handler that doesn't exist yet.
+//   Must be called BEFORE ScheduleNextCycle.cdc.
 //
-// WHY SEPARATE FROM CreateCircle?
-//   The handler is only needed when the circle becomes ACTIVE.
-//   Creating it at circle creation time would waste storage for circles
-//   that never fill up. Also, the handler needs to be stored BEFORE
-//   scheduling, and scheduling needs fees — separating these steps
-//   gives the frontend control over the flow.
+// AUTHORIZATION PATTERN:
+//   The handler needs to call circle.executeCycle() when the scheduler fires.
+//   Inside executeTransaction(), self.owner is unauthorized — we can't
+//   borrow from storage directly. Solution: pass a pre-issued capability
+//   to the handler at creation time. The capability acts as a pre-authorized
+//   reference that can be borrowed without auth checks.
 //
 // PARAMETERS:
 //   circleId: The circle ID (used to construct storage paths)
 // ============================================================================
 
+import ChamaCircle from "ChamaCircle"
 import ChamaScheduler from "ChamaScheduler"
 import FlowTransactionScheduler from "FlowTransactionScheduler"
 
@@ -31,48 +32,48 @@ transaction(circleId: UInt64) {
     prepare(signer: auth(Storage, Capabilities) &Account) {
 
         // ── Construct paths ──
-        // Handler path mirrors the circle path for consistency:
-        //   Circle:  /storage/chamaCircle_1
-        //   Handler: /storage/chamaHandler_1
         let circlePath = StoragePath(identifier: "chamaCircle_".concat(circleId.toString()))
             ?? panic("Could not create circle storage path")
 
         let handlerPath = StoragePath(identifier: "chamaHandler_".concat(circleId.toString()))
             ?? panic("Could not create handler storage path")
 
-        // ── Check if handler already exists ──
-        // Prevents double-initialization (idempotent operation)
+        let handlerPublicPath = PublicPath(identifier: "chamaHandler_".concat(circleId.toString()))
+            ?? panic("Could not create handler public path")
+
+        // ── Check if handler already exists (idempotent) ──
         if signer.storage.borrow<&AnyResource>(from: handlerPath) != nil {
-            return  // Handler already initialized, nothing to do
+            return
         }
 
-        // ── Step 1: Create the handler resource ──
-        // The handler is tied to a specific circle via circlePath.
-        // When the scheduler calls executeTransaction(), the handler
-        // borrows the Circle from this path and calls executeCycle().
-        let handler <- ChamaScheduler.createHandler(circlePath: circlePath)
+        // ── Step 1: Issue capability to the Circle resource ──
+        //
+        // This capability allows the handler to borrow the Circle
+        // without needing auth(Storage) access. The capability is
+        // "pre-authorized" — whoever holds it can borrow the reference.
+        let circleCap = signer.capabilities.storage
+            .issue<&ChamaCircle.Circle>(circlePath)
 
-        // ── Step 2: Store in account ──
+        // ── Step 2: Create the handler with the circle capability ──
+        let handler <- ChamaScheduler.createHandler(
+            circleCap: circleCap,
+            storagePath: handlerPath,
+            publicPath: handlerPublicPath
+        )
+
+        // ── Step 3: Store handler in account ──
         signer.storage.save(<- handler, to: handlerPath)
 
-        // ── Step 3: Issue capability with Execute entitlement ──
+        // ── Step 4: Issue Execute-entitled capability for the scheduler ──
         //
-        // CRITICAL: The capability must have the FlowTransactionScheduler.Execute
-        // entitlement. This is what allows the scheduler to call
-        // executeTransaction() on our handler. Without this entitlement,
-        // the scheduled transaction will fail with an access error.
-        //
-        // We issue an auth capability (with Execute) for the scheduler,
-        // and a plain public capability for querying handler status.
+        // CRITICAL: Must include FlowTransactionScheduler.Execute entitlement.
+        // Without it, the scheduler cannot call executeTransaction().
         let _ = signer.capabilities.storage
             .issue<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}>(handlerPath)
 
-        // Public capability for discovery (no Execute entitlement = read-only)
-        let publicPath = PublicPath(identifier: "chamaHandler_".concat(circleId.toString()))
-            ?? panic("Could not create handler public path")
-
+        // Public capability for discovery (no Execute = read-only)
         let publicCap = signer.capabilities.storage
             .issue<&{FlowTransactionScheduler.TransactionHandler}>(handlerPath)
-        signer.capabilities.publish(publicCap, at: publicPath)
+        signer.capabilities.publish(publicCap, at: handlerPublicPath)
     }
 }
