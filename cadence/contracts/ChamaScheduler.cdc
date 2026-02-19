@@ -3,39 +3,30 @@
 // ============================================================================
 //
 // PURPOSE:
-//   This contract bridges ChamaCircle to Flow's FlowTransactionScheduler.
-//   It implements the TransactionHandler interface — the hook that the
-//   Flow protocol calls when a scheduled timestamp arrives.
+//   Bridges ChamaCircle to Flow's FlowTransactionScheduler.
+//   Implements the TransactionHandler interface that the Flow protocol
+//   calls at scheduled timestamps.
 //
-// HOW SCHEDULED TRANSACTIONS WORK ON FLOW:
-//   1. You create a TransactionHandler resource (this contract provides one)
-//   2. You store it in your account and issue a capability
-//   3. You call FlowTransactionScheduler.schedule() with:
-//      - The handler capability
-//      - A future timestamp
-//      - Priority level (High/Medium/Low)
-//      - Execution effort estimate
-//      - Fee payment (FlowToken)
-//   4. At the target timestamp, the Flow execution engine calls:
-//      handler.executeTransaction(id, data)
-//   5. The handler can then schedule the NEXT execution (self-chaining)
+// AUTHORIZATION FIX:
+//   Inside executeTransaction(), self.owner gives us an UNAUTHORIZED
+//   &Account reference. We cannot call .storage.borrow() on it.
 //
-// WHY THIS IS REVOLUTIONARY FOR ROSCAs:
-//   Every previous blockchain ROSCA needs an external trigger:
-//   - WeTrust (Ethereum): keeper bot
-//   - Bloinx: cron job
-//   - CircleSync (our Celo design): WhatsApp bot calls executePayout()
+//   Solution: Store a Capability<&ChamaCircle.Circle> at init time.
+//   The handler holds a capability (issued when the handler is created)
+//   and borrows from it when the scheduler fires. This avoids the
+//   auth(Storage | BorrowValue) requirement entirely.
 //
-//   With Flow Scheduled Transactions, the PROTOCOL is the keeper.
-//   The blockchain itself fires executeCycle() at the deadline.
-//   No bots. No servers. No coordinator. Trustless by architecture.
-//
-// CRITICAL API CORRECTION (from spec):
-//   The spec assumed: executeTransaction(data: AnyStruct?)
-//   The actual API is: executeTransaction(id: UInt64, data: AnyStruct?)
-//   The handler also MUST implement getViews() and resolveView()
-//   to report its storage and public paths. These are required by
-//   the TransactionHandler interface.
+// HOW IT WORKS:
+//   1. CreateCircle transaction stores Circle in /storage/chamaCircle_N
+//   2. InitHandler transaction:
+//      a. Issues a Capability<&ChamaCircle.Circle> for the storage path
+//      b. Creates the handler WITH that capability
+//      c. Stores the handler in /storage/chamaHandler_N
+//      d. Issues Execute-entitled capability for the scheduler
+//   3. ScheduleNextCycle registers the handler with FlowTransactionScheduler
+//   4. At the deadline, the scheduler calls executeTransaction()
+//   5. The handler borrows the circle via its stored capability
+//   6. Calls circle.executeCycle() → payout fires trustlessly
 // ============================================================================
 
 import FlowTransactionScheduler from "FlowTransactionScheduler"
@@ -46,9 +37,6 @@ access(all) contract ChamaScheduler {
     // ========================================================================
     // EVENTS
     // ========================================================================
-    // These events let the frontend know when scheduled actions fire.
-    // The frontend subscribes to CycleExecutedByScheduler to trigger
-    // the PayoutBanner animation — the "wow moment" in the demo.
 
     access(all) event CycleExecutedByScheduler(
         circleId: UInt64,
@@ -62,86 +50,81 @@ access(all) contract ChamaScheduler {
     )
 
     // ========================================================================
+    // STORAGE PATHS (for getViews/resolveView)
+    // ========================================================================
+
+    access(all) let HandlerStoragePathPrefix: String
+    access(all) let HandlerPublicPathPrefix: String
+
+    // ========================================================================
     // TRANSACTION HANDLER RESOURCE
     // ========================================================================
     //
-    // This resource implements FlowTransactionScheduler.TransactionHandler.
-    // When the Flow protocol fires a scheduled transaction, it calls
-    // executeTransaction() on this resource.
+    // Holds a Capability to the Circle resource. When the scheduler
+    // fires executeTransaction(), the handler borrows the Circle via
+    // this capability and calls executeCycle().
     //
-    // WHY A RESOURCE (not a function)?
-    //   The scheduler needs a stable reference to call back into.
-    //   A resource stored in an account provides this — the scheduler
-    //   holds a capability to it. Resources can't be duplicated or
-    //   spoofed, so only the legitimate handler fires.
+    // WHY A CAPABILITY instead of direct storage borrow?
+    //   The TransactionHandler's executeTransaction() runs in a context
+    //   where self.owner gives an unauthorized account reference.
+    //   You CANNOT call self.owner!.storage.borrow() — it requires
+    //   auth(Storage | BorrowValue) which isn't available.
     //
-    // ACCESS CONTROL:
-    //   executeTransaction uses access(FlowTransactionScheduler.Execute)
-    //   This is an ENTITLEMENT — only the FlowTransactionScheduler system
-    //   contract can call it. No one else can trigger your handler.
-    //   This prevents griefing attacks where someone calls executeCycle()
-    //   at the wrong time.
+    //   Capabilities solve this: they're pre-authorized references
+    //   that can be borrowed without additional auth checks.
     // ========================================================================
 
     access(all) resource ChamaTransactionHandler: FlowTransactionScheduler.TransactionHandler {
 
-        // The storage path where the Circle resource lives.
-        // Each handler is tied to ONE circle — if you have multiple circles,
-        // you create multiple handlers stored at different paths.
-        access(self) let circlePath: StoragePath
+        // Pre-authorized capability to the Circle resource.
+        // Issued by the circle host during InitHandler transaction.
+        access(self) let circleCap: Capability<&ChamaCircle.Circle>
 
-        init(circlePath: StoragePath) {
-            self.circlePath = circlePath
+        // Storage path where THIS handler is stored (for getViews)
+        access(self) let storagePath: StoragePath
+        access(self) let publicPath: PublicPath
+
+        init(
+            circleCap: Capability<&ChamaCircle.Circle>,
+            storagePath: StoragePath,
+            publicPath: PublicPath
+        ) {
+            self.circleCap = circleCap
+            self.storagePath = storagePath
+            self.publicPath = publicPath
         }
 
         // ────────────────────────────────────────────────────────────────
         // executeTransaction — THE FUNCTION THE BLOCKCHAIN CALLS
         // ────────────────────────────────────────────────────────────────
         //
-        // Parameters (from FlowTransactionScheduler.TransactionHandler):
-        //   id: UInt64 — unique scheduling ID assigned by the scheduler
-        //   data: AnyStruct? — optional data passed at schedule time
+        // Called by the Flow protocol at the scheduled timestamp.
+        // No human triggers this — the blockchain is the keeper.
         //
-        // IMPORTANT: The spec had only (data: AnyStruct?) but the actual
-        // Flow API requires (id: UInt64, data: AnyStruct?). The id lets
-        // you track which scheduled tx fired (useful for debugging and
-        // for the Manager pattern's internal bookkeeping).
-        //
-        // WHAT HAPPENS WHEN THIS FIRES:
-        //   1. Borrows the Circle resource from the host account's storage
-        //   2. Reads the current state (to capture cycle number for events)
-        //   3. Calls circle.executeCycle() which:
-        //      - Checks all contributions
-        //      - Penalizes delinquent members
-        //      - Transfers pool to current recipient
-        //      - Resets contribution flags
-        //      - Advances cycle (or completes circle)
-        //   4. Emits events for the frontend to pick up
-        //   5. If circle is still active, emits NextCycleScheduled
-        //      (the frontend or a re-scheduling tx handles the next schedule)
+        // Parameters:
+        //   id: UInt64 — scheduling ID assigned by FlowTransactionScheduler
+        //   data: AnyStruct? — optional data (we pass nil)
         // ────────────────────────────────────────────────────────────────
 
         access(FlowTransactionScheduler.Execute)
         fun executeTransaction(id: UInt64, data: AnyStruct?) {
 
-            // self.owner is the account that stores this handler resource.
-            // We borrow the Circle from that same account's storage.
-            // This is safe because:
-            //   - Only the account owner can store resources in their storage
-            //   - The capability is issued by the owner
-            //   - The scheduler calls via that capability
-            let circle = self.owner!.storage
-                .borrow<&ChamaCircle.Circle>(from: self.circlePath)
-                ?? panic("Could not borrow circle from ".concat(self.circlePath.toString()))
+            // Borrow the Circle via the stored capability.
+            // This works because the capability was issued with full
+            // access to the Circle resource during InitHandler.
+            let circle = self.circleCap.borrow()
+                ?? panic("Could not borrow circle via capability — was the circle moved or destroyed?")
 
             // Capture state BEFORE execution (for event data)
             let state = circle.getState()
             let currentCycle = state.currentCycle
 
             // ── THE CRITICAL CALL ──
-            // This is where the trustless payout happens.
             // circle.executeCycle() handles everything:
-            // penalties, payout transfer, cycle advancement.
+            //   1. Penalize delinquent members
+            //   2. Transfer pool to current recipient
+            //   3. Reset contribution flags
+            //   4. Advance cycle (or complete circle)
             circle.executeCycle()
 
             emit CycleExecutedByScheduler(
@@ -150,23 +133,9 @@ access(all) contract ChamaScheduler {
                 timestamp: getCurrentBlock().timestamp
             )
 
-            // Check if the circle is still active (more cycles remain)
+            // If circle is still active, emit event for re-scheduling
             let newState = circle.getState()
             if newState.status == ChamaCircle.CircleStatus.ACTIVE {
-                // Emit event so the frontend (or a listener transaction)
-                // knows to schedule the next cycle.
-                //
-                // WHY NOT SELF-SCHEDULE HERE?
-                //   Scheduling requires paying fees (FlowToken withdrawal).
-                //   Inside executeTransaction(), we don't have access to a
-                //   fee-paying vault. The scheduling fee must come from a
-                //   separate transaction submitted by the circle host or
-                //   from a pre-funded fee vault.
-                //
-                //   For the hackathon demo (4 cycles, 60s each), the frontend
-                //   listens for this event and auto-submits ScheduleNextCycle.cdc.
-                //   In production, you'd use FlowTransactionSchedulerUtils.Manager
-                //   with pre-funded fees at circle creation time.
                 emit NextCycleScheduled(
                     circleId: state.circleId,
                     cycle: newState.currentCycle,
@@ -176,17 +145,7 @@ access(all) contract ChamaScheduler {
         }
 
         // ────────────────────────────────────────────────────────────────
-        // getViews + resolveView — REQUIRED BY TransactionHandler
-        // ────────────────────────────────────────────────────────────────
-        //
-        // These methods tell the scheduler where this handler lives
-        // in account storage. The scheduler uses them for discovery
-        // and management. Without these, deployment will fail with
-        // "does not conform to TransactionHandler".
-        //
-        // getViews() returns the types of views this handler supports.
-        // resolveView() returns the actual value for a given view type.
-        // For handlers, the convention is to return StoragePath and PublicPath.
+        // getViews + resolveView — REQUIRED by TransactionHandler
         // ────────────────────────────────────────────────────────────────
 
         access(all) view fun getViews(): [Type] {
@@ -196,14 +155,9 @@ access(all) contract ChamaScheduler {
         access(all) fun resolveView(_ view: Type): AnyStruct? {
             switch view {
             case Type<StoragePath>():
-                return self.circlePath
+                return self.storagePath
             case Type<PublicPath>():
-                // Derive a public path from the storage path name
-                // e.g., /storage/chamaHandler_1 -> /public/chamaHandler_1
-                return PublicPath(identifier: self.circlePath.toString().slice(
-                    from: "/storage/".length,
-                    upTo: self.circlePath.toString().length
-                )) ?? /public/chamaHandler
+                return self.publicPath
             default:
                 return nil
             }
@@ -214,20 +168,25 @@ access(all) contract ChamaScheduler {
     // FACTORY FUNCTION
     // ========================================================================
     //
-    // Creates a handler tied to a specific circle's storage path.
+    // Creates a handler tied to a specific circle via capability.
     //
-    // Usage in a transaction:
-    //   let handler <- ChamaScheduler.createHandler(
-    //       circlePath: /storage/chamaCircle_1
-    //   )
-    //   signer.storage.save(<- handler, to: /storage/chamaHandler_1)
-    //
-    // The caller then issues a capability and passes it to the scheduler.
+    // Called by InitHandler.cdc after issuing a capability for the circle.
     // ========================================================================
 
-    access(all) fun createHandler(circlePath: StoragePath): @ChamaTransactionHandler {
-        return <- create ChamaTransactionHandler(circlePath: circlePath)
+    access(all) fun createHandler(
+        circleCap: Capability<&ChamaCircle.Circle>,
+        storagePath: StoragePath,
+        publicPath: PublicPath
+    ): @ChamaTransactionHandler {
+        return <- create ChamaTransactionHandler(
+            circleCap: circleCap,
+            storagePath: storagePath,
+            publicPath: publicPath
+        )
     }
 
-    init() {}
+    init() {
+        self.HandlerStoragePathPrefix = "chamaHandler_"
+        self.HandlerPublicPathPrefix = "chamaHandler_"
+    }
 }
