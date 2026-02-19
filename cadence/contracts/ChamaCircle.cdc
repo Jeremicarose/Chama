@@ -515,9 +515,9 @@ access(all) contract ChamaCircle {
                     if !memberInfo.isDelinquent {
                         if let deposit <- self.deposits[addr] <- nil {
                             if deposit.balance > 0.0 {
-                                let receiverRef = 
-                                    .borrow<&{FungibleToken.Receiver}>()
-
+                                let receiverRef = getAccount(addr)
+                                    .capabilities.get<&{FungibleToken.Receiver}>(/public/flowTokenReceiver)
+                                    .borrow()
 
                                 if let receiver = receiverRef {
                                     receiver.deposit(from: <- deposit)
