@@ -1,5 +1,6 @@
 {
 	"contracts": {
+		"TestSimple": "cadence/contracts/TestSimple.cdc",
 		"ChamaCircle": "cadence/contracts/ChamaCircle.cdc",
 		"ChamaManager": "cadence/contracts/ChamaManager.cdc",
 		"ChamaScheduler": "cadence/contracts/ChamaScheduler.cdc",
