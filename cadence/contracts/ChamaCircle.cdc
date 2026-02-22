@@ -413,11 +413,14 @@ access(all) contract ChamaCircle {
             }
 
             // ── Step 1: Penalize delinquent members ──
-            // Anyone who hasn't contributed AND isn't already delinquent gets penalized.
-            // Penalty = percentage of their security deposit → goes into the pool.
+            // Anyone who hasn't contributed this cycle gets penalized.
+            // Penalty = penaltyPercent of their REMAINING security deposit → goes into pool.
+            // Repeated delinquency compounds: miss 3 cycles with 50% penalty =
+            // deposit × 0.5 × 0.5 × 0.5 = 12.5% remaining. This escalating
+            // pressure incentivizes catching up on missed contributions.
             for addr in self.memberOrder {
                 if let memberInfo = self.members[addr] {
-                    if !memberInfo.hasContributed && !memberInfo.isDelinquent {
+                    if !memberInfo.hasContributed {
                         self.penalizeMember(member: addr)
                     }
                 }
