@@ -45,6 +45,8 @@ access(all) contract ChamaCircle {
     access(all) event MemberPenalized(circleId: UInt64, member: Address, cycle: UInt64)
     access(all) event CycleAdvanced(circleId: UInt64, newCycle: UInt64, nextDeadline: UFix64)
     access(all) event CircleCompleted(circleId: UInt64)
+    access(all) event DepositReturned(circleId: UInt64, member: Address, amount: UFix64)
+    access(all) event DepositSlashed(circleId: UInt64, member: Address, penaltyAmount: UFix64, remainingDeposit: UFix64, cycle: UInt64)
     access(all) event ReceiptCIDStored(circleId: UInt64, cycle: UInt64, cid: String)
 
     // ========================================================================
