@@ -95,6 +95,7 @@ access(all) contract ChamaCircle {
         access(all) var totalContributed: UFix64
         access(all) var cyclesContributed: UInt64
         access(all) var isDelinquent: Bool
+        access(all) var delinquencyCount: UInt64   // How many cycles missed (for UI severity display)
         access(all) let rotationPosition: UInt64
 
         init(address: Address, position: UInt64) {
@@ -103,6 +104,7 @@ access(all) contract ChamaCircle {
             self.totalContributed = 0.0
             self.cyclesContributed = 0
             self.isDelinquent = false
+            self.delinquencyCount = 0
             self.rotationPosition = position
         }
 
@@ -114,26 +116,33 @@ access(all) contract ChamaCircle {
             updated.totalContributed = self.totalContributed + amount
             updated.cyclesContributed = self.cyclesContributed + 1
             updated.isDelinquent = self.isDelinquent
+            updated.delinquencyCount = self.delinquencyCount
             return updated
         }
 
-        // Helper to reset contribution flag for the next cycle
+        // Helper to reset contribution flag for the next cycle.
+        // Keeps totals and delinquency history intact.
         access(all) fun resetForNewCycle(): MemberInfo {
             let updated = MemberInfo(address: self.address, position: self.rotationPosition)
             updated.hasContributed = false
             updated.totalContributed = self.totalContributed
             updated.cyclesContributed = self.cyclesContributed
             updated.isDelinquent = self.isDelinquent
+            updated.delinquencyCount = self.delinquencyCount
             return updated
         }
 
-        // Helper to mark as delinquent
+        // Helper to increment delinquency count.
+        // Called each time a member misses a contribution deadline.
+        // Unlike the old binary flag, this allows repeated penalties —
+        // a member who misses 3 cycles loses 3x the penalty percentage.
         access(all) fun withDelinquency(): MemberInfo {
             let updated = MemberInfo(address: self.address, position: self.rotationPosition)
             updated.hasContributed = self.hasContributed
             updated.totalContributed = self.totalContributed
             updated.cyclesContributed = self.cyclesContributed
             updated.isDelinquent = true
+            updated.delinquencyCount = self.delinquencyCount + 1
             return updated
         }
     }
