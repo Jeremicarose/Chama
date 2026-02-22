@@ -485,18 +485,46 @@ access(all) contract ChamaCircle {
 
         /// Penalize a member for not contributing by the deadline.
         ///
-        /// Forfeits penaltyPercent of their security deposit into the pool.
+        /// Forfeits penaltyPercent of their REMAINING security deposit into the pool.
         /// This is the enforcement mechanism that replaces social pressure.
         /// The penalty benefits other members by increasing the pool size.
+        ///
+        /// COMPOUNDING PENALTIES:
+        ///   Each missed cycle applies penaltyPercent to whatever deposit remains.
+        ///   With 50% penalty and a 10 FLOW deposit:
+        ///     Miss cycle 1: 10 × 0.5 = 5.0 forfeited, 5.0 remaining
+        ///     Miss cycle 2: 5 × 0.5 = 2.5 forfeited, 2.5 remaining
+        ///     Miss cycle 3: 2.5 × 0.5 = 1.25 forfeited, 1.25 remaining
+        ///   The deposit never reaches exactly 0 (asymptotic), but can become
+        ///   negligibly small. We skip penalties on deposits < 0.00000001 FLOW.
+        ///
+        /// EDGE CASES HANDLED:
+        ///   - Deposit already drained: skip silently (no penalty to extract)
+        ///   - penaltyPercent = 0: no forfeiture, just marks delinquent
+        ///   - penaltyPercent = 100: full deposit forfeited on first miss
         access(self) fun penalizeMember(member: Address) {
-            // Remove the member's deposit vault from storage
+            // Temporarily remove the member's deposit vault from storage
             if let deposit <- self.deposits[member] <- nil {
-                let penaltyAmount = deposit.balance * (self.config.penaltyPercent / 100.0)
+                let depositBalance = deposit.balance
 
-                if penaltyAmount > 0.0 && penaltyAmount <= deposit.balance {
-                    let penalty <- deposit.withdraw(amount: penaltyAmount)
-                    // Penalty goes into the contribution pool → benefits recipients
-                    self.vault.deposit(from: <- penalty)
+                // Skip penalty if deposit is effectively empty (dust threshold)
+                // UFix64 has 8 decimal places; 0.00000001 is the smallest unit.
+                if depositBalance > 0.00000001 && self.config.penaltyPercent > 0.0 {
+                    let penaltyAmount = depositBalance * (self.config.penaltyPercent / 100.0)
+
+                    if penaltyAmount > 0.0 && penaltyAmount <= depositBalance {
+                        let penalty <- deposit.withdraw(amount: penaltyAmount)
+                        // Penalty goes into the contribution pool → benefits recipients
+                        self.vault.deposit(from: <- penalty)
+
+                        emit DepositSlashed(
+                            circleId: self.circleId,
+                            member: member,
+                            penaltyAmount: penaltyAmount,
+                            remainingDeposit: deposit.balance,
+                            cycle: self.currentCycle
+                        )
+                    }
                 }
 
                 // Return the remaining deposit to storage (reduced by penalty)
@@ -504,7 +532,7 @@ access(all) contract ChamaCircle {
                 destroy oldDeposit
             }
 
-            // Mark member as delinquent (permanent for this circle)
+            // Increment delinquency count (tracks how many cycles missed)
             if let memberInfo = self.members[member] {
                 self.members[member] = memberInfo.withDelinquency()
             }
