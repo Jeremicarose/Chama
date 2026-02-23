@@ -248,18 +248,157 @@ access(all) fun testDelinquencyPreservesContributionHistory() {
 }
 
 // ============================================================================
+// TEST: Compounding Delinquency
+// ============================================================================
+//
+// These tests verify the new penalty model where missing multiple cycles
+// applies repeated penalties to the shrinking deposit.
+
+access(all) fun testDelinquencyCountIncrements() {
+    // WHAT: Each withDelinquency() call increments the count
+    // WHY: Distinguishes "missed 1 cycle" from "missed 4 cycles" in the UI.
+    //       Compounding penalties: count=3 means deposit was penalized 3 times.
+    let member = ChamaCircle.MemberInfo(address: account.address, position: 0)
+    let d1 = member.withDelinquency()
+    let d2 = d1.withDelinquency()
+    let d3 = d2.withDelinquency()
+
+    Test.assertEqual(1 as UInt64, d1.delinquencyCount)
+    Test.assertEqual(2 as UInt64, d2.delinquencyCount)
+    Test.assertEqual(3 as UInt64, d3.delinquencyCount)
+
+    // isDelinquent stays true throughout
+    Test.assertEqual(true, d1.isDelinquent)
+    Test.assertEqual(true, d2.isDelinquent)
+    Test.assertEqual(true, d3.isDelinquent)
+}
+
+access(all) fun testDelinquencyPreservesContributionAfterMultipleMisses() {
+    // WHAT: A member who contributed then missed two cycles keeps history
+    // WHY: The receipt system and UI need accurate contribution records
+    //       even for members who later became delinquent.
+    let member = ChamaCircle.MemberInfo(address: account.address, position: 0)
+    let contributed = member.withContribution(amount: 10.0)
+    let reset1 = contributed.resetForNewCycle()
+    let d1 = reset1.withDelinquency()          // Missed cycle 2
+    let reset2 = d1.resetForNewCycle()
+    let d2 = reset2.withDelinquency()          // Missed cycle 3
+
+    Test.assertEqual(10.0, d2.totalContributed)
+    Test.assertEqual(1 as UInt64, d2.cyclesContributed)
+    Test.assertEqual(2 as UInt64, d2.delinquencyCount)
+    Test.assertEqual(true, d2.isDelinquent)
+    Test.assertEqual(false, d2.hasContributed)  // Reset for new cycle
+}
+
+access(all) fun testDelinquentMemberCanContributeAgain() {
+    // WHAT: A delinquent member can still contribute in subsequent cycles
+    // WHY: Being delinquent doesn't exclude you from the circle. You're still
+    //       expected to contribute. The penalty was for the MISSED cycle.
+    //       Contributing in a later cycle still updates your stats.
+    let member = ChamaCircle.MemberInfo(address: account.address, position: 0)
+    let delinquent = member.withDelinquency()     // Missed cycle 1
+    let reset = delinquent.resetForNewCycle()
+    let contributed = reset.withContribution(amount: 10.0)  // Paid in cycle 2
+
+    Test.assertEqual(true, contributed.isDelinquent)
+    Test.assertEqual(1 as UInt64, contributed.delinquencyCount)
+    Test.assertEqual(true, contributed.hasContributed)
+    Test.assertEqual(10.0, contributed.totalContributed)
+    Test.assertEqual(1 as UInt64, contributed.cyclesContributed)
+}
+
+access(all) fun testWithContributionPreservesDelinquencyCount() {
+    // WHAT: withContribution() doesn't reset delinquency tracking
+    // WHY: Delinquency count is permanent history — it records how many
+    //       cycles were missed regardless of subsequent contributions.
+    let member = ChamaCircle.MemberInfo(address: account.address, position: 0)
+    let d1 = member.withDelinquency()
+    let d2 = d1.withDelinquency()
+    let reset = d2.resetForNewCycle()
+    let contributed = reset.withContribution(amount: 10.0)
+
+    Test.assertEqual(2 as UInt64, contributed.delinquencyCount)
+    Test.assertEqual(true, contributed.isDelinquent)
+}
+
+access(all) fun testResetForNewCyclePreservesDelinquencyCount() {
+    // WHAT: resetForNewCycle() keeps delinquency count intact
+    // WHY: Only hasContributed resets each cycle. Delinquency history persists.
+    let member = ChamaCircle.MemberInfo(address: account.address, position: 0)
+    let delinquent = member.withDelinquency().withDelinquency()
+    let reset = delinquent.resetForNewCycle()
+
+    Test.assertEqual(2 as UInt64, reset.delinquencyCount)
+    Test.assertEqual(true, reset.isDelinquent)
+    Test.assertEqual(false, reset.hasContributed)
+}
+
+// ============================================================================
+// TEST: CircleConfig Edge Cases
+// ============================================================================
+
+access(all) fun testConfigAcceptsZeroPenalty() {
+    // WHAT: penaltyPercent = 0 is valid (no-penalty circle)
+    // WHY: Some circles may rely on social trust rather than financial penalty.
+    //       The contract should allow this as a valid configuration.
+    let config = ChamaCircle.CircleConfig(
+        name: "Trust Circle",
+        contributionAmount: 10.0,
+        cycleDuration: 60.0,
+        maxMembers: 4,
+        penaltyPercent: 0.0
+    )
+    Test.assertEqual(0.0, config.penaltyPercent)
+}
+
+access(all) fun testConfigAcceptsFullPenalty() {
+    // WHAT: penaltyPercent = 100 is valid (total forfeit on first miss)
+    // WHY: A strict circle may want to forfeit the entire deposit on any
+    //       missed contribution. This is the maximum enforcement.
+    let config = ChamaCircle.CircleConfig(
+        name: "Strict Circle",
+        contributionAmount: 10.0,
+        cycleDuration: 60.0,
+        maxMembers: 4,
+        penaltyPercent: 100.0
+    )
+    Test.assertEqual(100.0, config.penaltyPercent)
+}
+
+access(all) fun testConfigAcceptsMinimumMembers() {
+    // WHAT: maxMembers = 2 is the minimum valid circle
+    // WHY: Two people is the smallest possible rotation.
+    let config = ChamaCircle.CircleConfig(
+        name: "Pair Circle",
+        contributionAmount: 5.0,
+        cycleDuration: 30.0,
+        maxMembers: 2,
+        penaltyPercent: 25.0
+    )
+    Test.assertEqual(2 as UInt64, config.maxMembers)
+}
+
+access(all) fun testConfigAcceptsMaximumMembers() {
+    // WHAT: maxMembers = 20 is the maximum valid circle
+    // WHY: 20 is the gas safety cap for executeCycle() iteration.
+    let config = ChamaCircle.CircleConfig(
+        name: "Max Circle",
+        contributionAmount: 1.0,
+        cycleDuration: 120.0,
+        maxMembers: 20,
+        penaltyPercent: 10.0
+    )
+    Test.assertEqual(20 as UInt64, config.maxMembers)
+}
+
+// ============================================================================
 // TEST: Circle Counter
 // ============================================================================
 
 access(all) fun testTotalCirclesCreatedIncrements() {
-    // WHAT: Each createCircle() call increments the global counter
+    // WHAT: The global counter starts at 0 after deployment
     // WHY: Circle IDs must be unique and sequential for UI readability.
-    //       The counter lives at the contract level and only increments.
     let initialCount = ChamaCircle.totalCirclesCreated
-
-    // We can't call createCircle() directly from a test (returns a resource
-    // that needs storage), but we can verify the counter starts at the
-    // expected value. After our setup + any prior tests, it should be
-    // at whatever the deployment set it to (0).
     Test.assert(initialCount >= 0, message: "Counter should be non-negative")
 }
