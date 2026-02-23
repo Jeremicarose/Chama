@@ -605,7 +605,9 @@ access(all) contract ChamaCircle {
                     "Deposits can only be claimed after circle completion"
             }
 
-            let deposit <- self.deposits[member] <- nil
+            // Remove the deposit from storage using the swap-and-nil pattern.
+            // In Cadence, dict[key] <- nil removes the value and returns it as optional.
+            let deposit <- self.deposits.remove(key: member)
                 ?? panic("No deposit found for address ".concat(member.toString()))
 
             let amount = deposit.balance
