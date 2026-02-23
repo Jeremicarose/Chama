@@ -160,6 +160,7 @@ access(all) fun testMemberInfoInitialization() {
     Test.assertEqual(0.0, member.totalContributed)
     Test.assertEqual(0 as UInt64, member.cyclesContributed)
     Test.assertEqual(false, member.isDelinquent)
+    Test.assertEqual(0 as UInt64, member.delinquencyCount)
     Test.assertEqual(0 as UInt64, member.rotationPosition)
 }
 
