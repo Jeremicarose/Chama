@@ -216,17 +216,18 @@ access(all) fun testMemberInfoResetForNewCycle() {
 }
 
 access(all) fun testMemberInfoWithDelinquency() {
-    // WHAT: withDelinquency() marks a member as permanently delinquent
-    // WHY: Once marked delinquent, a member's deposit is partially forfeited
-    //       and they don't get their deposit back at circle completion.
-    //       Delinquency is permanent for the circle — no forgiveness.
+    // WHAT: withDelinquency() marks a member as delinquent and increments count
+    // WHY: Delinquency is tracked per-cycle. Each missed cycle increments the
+    //       count and applies another penalty to the remaining deposit.
     let member = ChamaCircle.MemberInfo(address: account.address, position: 0)
 
     Test.assertEqual(false, member.isDelinquent)
+    Test.assertEqual(0 as UInt64, member.delinquencyCount)
 
     let delinquent = member.withDelinquency()
 
     Test.assertEqual(true, delinquent.isDelinquent)
+    Test.assertEqual(1 as UInt64, delinquent.delinquencyCount)
     // Other fields preserved
     Test.assertEqual(account.address, delinquent.address)
     Test.assertEqual(0 as UInt64, delinquent.rotationPosition)
