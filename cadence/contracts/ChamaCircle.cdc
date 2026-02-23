@@ -548,33 +548,75 @@ access(all) contract ChamaCircle {
         // DEPOSIT RETURN
         // ────────────────────────────────────────────────────────────────
 
-        /// Return security deposits to all non-delinquent members.
-        /// Called when the circle completes (all cycles finished).
-        /// Delinquent members have already had their deposits reduced.
+        /// Return security deposits to ALL members when the circle completes.
+        ///
+        /// WHY RETURN TO DELINQUENT MEMBERS TOO?
+        ///   Delinquent members have already been penalized each cycle they missed.
+        ///   Their deposit has been reduced by (penaltyPercent)^N where N = missed cycles.
+        ///   Whatever remains is rightfully theirs — the penalty was already extracted.
+        ///   Keeping the remainder would be unjust enrichment.
+        ///
+        /// FAILURE HANDLING:
+        ///   If a member's FlowToken receiver can't be borrowed (account destroyed,
+        ///   capability unlinked, etc.), we store the deposit back for manual claim
+        ///   via claimDeposit(). This prevents funds from being permanently locked.
         access(self) fun returnDeposits() {
             for addr in self.memberOrder {
-                if let memberInfo = self.members[addr] {
-                    if !memberInfo.isDelinquent {
-                        if let deposit <- self.deposits[addr] <- nil {
-                            if deposit.balance > 0.0 {
-                                let receiverRef = getAccount(addr)
-                                    .capabilities.get<&{FungibleToken.Receiver}>(/public/flowTokenReceiver)
-                                    .borrow()
+                if let deposit <- self.deposits[addr] <- nil {
+                    let amount = deposit.balance
+                    if amount > 0.0 {
+                        let receiverRef = getAccount(addr)
+                            .capabilities.get<&{FungibleToken.Receiver}>(/public/flowTokenReceiver)
+                            .borrow()
 
-                                if let receiver = receiverRef {
-                                    receiver.deposit(from: <- deposit)
-                                } else {
-                                    // Can't return — store back for manual retrieval
-                                    let old <- self.deposits[addr] <- deposit
-                                    destroy old
-                                }
-                            } else {
-                                destroy deposit
-                            }
+                        if let receiver = receiverRef {
+                            receiver.deposit(from: <- deposit)
+                            emit DepositReturned(
+                                circleId: self.circleId,
+                                member: addr,
+                                amount: amount
+                            )
+                        } else {
+                            // Can't return — store back for manual retrieval via claimDeposit()
+                            let old <- self.deposits[addr] <- deposit
+                            destroy old
                         }
+                    } else {
+                        // Deposit fully drained by penalties — nothing to return
+                        destroy deposit
                     }
                 }
             }
+        }
+
+        /// Manual deposit claim for members whose auto-return failed.
+        ///
+        /// WHEN WOULD AUTO-RETURN FAIL?
+        ///   - Member's account was deleted/destroyed after joining
+        ///   - Member unlinked their FlowToken receiver capability
+        ///   - Network issue during the returnDeposits() loop
+        ///
+        /// This gives members a second chance to retrieve their deposit
+        /// by calling this function directly after fixing their account.
+        /// Only the deposit owner (matching address) can claim.
+        access(all) fun claimDeposit(member: Address): @FlowToken.Vault {
+            pre {
+                self.status == CircleStatus.COMPLETED:
+                    "Deposits can only be claimed after circle completion"
+            }
+
+            let deposit <- self.deposits[member] <- nil
+                ?? panic("No deposit found for address ".concat(member.toString()))
+
+            let amount = deposit.balance
+
+            emit DepositReturned(
+                circleId: self.circleId,
+                member: member,
+                amount: amount
+            )
+
+            return <- deposit
         }
 
         // ────────────────────────────────────────────────────────────────
