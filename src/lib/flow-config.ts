@@ -78,9 +78,9 @@ const CONTRACT_ADDRESSES: Record<string, ContractAddresses> = {
     ChamaManager: '0xf8d6e0586b0a20c7',
   },
   testnet: {
-    ChamaCircle: '0xCHAMA_TESTNET',    // TODO: Replace after testnet deployment
-    ChamaScheduler: '0xCHAMA_TESTNET',
-    ChamaManager: '0xCHAMA_TESTNET',
+    ChamaCircle: '0x4648c731f1777d9d',
+    ChamaScheduler: '0x4648c731f1777d9d',
+    ChamaManager: '0x4648c731f1777d9d',
   },
   mainnet: {
     ChamaCircle: '0xCHAMA_MAINNET',    // TODO: Replace after mainnet deployment
