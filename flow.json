@@ -51,11 +51,15 @@
 	},
 	"networks": {
 		"emulator": "127.0.0.1:3569",
-		"testing": "127.0.0.1:3569",
 		"mainnet": "access.mainnet.nodes.onflow.org:9000",
+		"testing": "127.0.0.1:3569",
 		"testnet": "access.devnet.nodes.onflow.org:9000"
 	},
 	"accounts": {
+		"": {
+			"address": "045a1763c93006ca",
+			"key": "30f7721be0257d1979f5c6a5eff8836e2d980d7793835ba6822d7cca52dbbae0"
+		},
 		"emulator-account": {
 			"address": "f8d6e0586b0a20c7",
 			"key": "2619878f0e2ff438d17571c382f2f818f539bea22ccfbebae9a57e8fed3e15a4"
