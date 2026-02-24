@@ -71,11 +71,22 @@
 		"member4": {
 			"address": "e03daebed8ca0615",
 			"key": "2619878f0e2ff438d17571c382f2f818f539bea22ccfbebae9a57e8fed3e15a4"
+		},
+		"testnet-account": {
+			"address": "4648c731f1777d9d",
+			"key": "6408e93c17d787c8b3a08eb710e0481b920f3ed93ff6849eb12524a49225d771"
 		}
 	},
 	"deployments": {
 		"emulator": {
 			"emulator-account": [
+				"ChamaCircle",
+				"ChamaScheduler",
+				"ChamaManager"
+			]
+		},
+		"testnet": {
+			"testnet-account": [
 				"ChamaCircle",
 				"ChamaScheduler",
 				"ChamaManager"
