@@ -121,3 +121,4 @@ transaction(
         ChamaManager.registerMember(circleId: circleId, member: signer.address)
     }
 }
+
