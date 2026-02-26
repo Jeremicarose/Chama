@@ -58,9 +58,9 @@ import { fcl } from '@/lib/flow-config';
  *   own interface gives us control and better IDE autocomplete.
  */
 export interface FlowUser {
-  addr: string | null;
+  addr: string | null | undefined;
   loggedIn: boolean;
-  cid: string | null;
+  cid: string | null | undefined;
 }
 
 // Default state before FCL reports anything. Using a constant avoids
