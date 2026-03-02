@@ -42,3 +42,6 @@ import { fcl } from '@/lib/flow-config';
 // =======================================================================
 //
 // Reused from Dadhboard - these query the ChamaManager registry to find
+// which circles a user belong to, then fetch each circle's state.
+
+const GET_MEM
