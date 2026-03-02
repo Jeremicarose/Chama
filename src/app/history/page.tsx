@@ -96,5 +96,10 @@ interface Receipt {
   details: Record<string, unknown>;
   previousReceiptCID: string | null;
   transactionId?: string;
+  receiptVersion?: number;
+  uploadedAt?: string;
+}
 
+interface ReceiptEntry {
+  cid: s
 }
