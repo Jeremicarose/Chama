@@ -38,3 +38,7 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { fcl } from '@/lib/flow-config';
 
 // =====================================================================================
+// Cadence Scripts
+// =======================================================================
+//
+// Reused from Dadhboard - these query the ChamaManager registry to find
