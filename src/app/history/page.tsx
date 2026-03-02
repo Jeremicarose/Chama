@@ -86,4 +86,4 @@ interface CircleSummary {
 }
 
 // __ Receipt shape from IPFS __
-// This mirrors the ReceiptData interface from receipt-service.ts
+// This mirrors the ReceiptData interface from receipt-service.ts, 
