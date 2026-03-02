@@ -47,5 +47,7 @@ import { fcl } from '@/lib/flow-config';
 const GET_MEMBER_CIRCLES_SCRIPT = `
 import ChamaManager from 0xChamaManager
 
-access(all) fun main(member: Address ): []
+access(all) fun main(member: Address ): [UInt64] {
+    return ChamaManager.getMemberCircles(member: member)
+}
 `
