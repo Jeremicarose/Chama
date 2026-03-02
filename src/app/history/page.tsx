@@ -10,4 +10,6 @@
 //
 // DATA FLOW:
 //    1. Fetch user's circle IDs from ChamaManager (same as Dashboard)
-//    2. For each circle, get the state (which includes latestReceipt)
+//    2. For each circle, get the state (which includes latestReceiptCID)
+//    3. When user selects a circle, fetch the receipt chain from IPFS
+//    4. Render receipt
