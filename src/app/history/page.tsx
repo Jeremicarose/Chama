@@ -109,4 +109,4 @@ interface ReceiptEntry {
 // Action Label Map
 // ==========================================================================
 //
-// Maps rec
+// Maps receipt action strings to human-readable labels and color classes
