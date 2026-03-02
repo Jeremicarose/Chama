@@ -9,4 +9,5 @@
 //    and renders it as a timeline, giving users a tamper-proof audit trial.
 //
 // DATA FLOW:
-//    1. Fetch user's circle IDs from Chama
+//    1. Fetch user's circle IDs from ChamaManager (same as Dashboard)
+//    2. For each circle, get the state (which includes latestReceipt)
