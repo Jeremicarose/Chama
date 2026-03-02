@@ -89,5 +89,9 @@ interface CircleSummary {
 // This mirrors the ReceiptData interface from receipt-service.ts, plus the 
 // extra fields added during upload (receiptVersion, uploadedAt).
 interface Receipt {
-  circleId: 
+  circleId: string;
+  action: string;
+  actor: string;
+  timestamp: string;
+  details: Record<string
 }
