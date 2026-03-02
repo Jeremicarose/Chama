@@ -55,5 +55,7 @@ access(all) fun main(member: Address ): [UInt64] {
 const GET_CIRCLE_HOST_SCRIPT = `
 import ChamaManager from 0xChamaManager
 
-
+access(all) fun main(circleId: UInt64): Address? {
+    return ChamaManager.getCircleHost
+}
 `
