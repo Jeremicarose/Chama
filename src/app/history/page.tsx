@@ -14,4 +14,4 @@
 //    3. When user selects a circle, fetch the receipt chain from IPFS
 //    4. Render receipts as a vertical timeline (newest first)
 //
-// WHY A SEPARATE PAGE (not a tab on Circle Detail)
+// WHY A SEPARATE PAGE (not a tab on Circle Detail)?
