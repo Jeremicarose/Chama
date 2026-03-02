@@ -2,4 +2,6 @@
 // history/page.tsx - Receipt hsitory and audit trial viewer
 // ==============================================================================
 //
-// PUR
+// PURPOSE:
+//    Displays the full recipt chain for each circle the user belongs to.
+//    
