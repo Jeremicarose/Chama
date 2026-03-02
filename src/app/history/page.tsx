@@ -50,4 +50,8 @@ import ChamaManager from 0xChamaManager
 access(all) fun main(member: Address ): [UInt64] {
     return ChamaManager.getMemberCircles(member: member)
 }
+`;
+
+const GET_CIRCLE_HOST_SCRIPT = `
+import ChamaManager from 0xChamaManager
 `
