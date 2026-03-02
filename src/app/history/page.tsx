@@ -56,6 +56,10 @@ const GET_CIRCLE_HOST_SCRIPT = `
 import ChamaManager from 0xChamaManager
 
 access(all) fun main(circleId: UInt64): Address? {
-    return ChamaManager.getCircleHost()
+    return ChamaManager.getCircleHost(circleId: circleId)
 }
+`;
+
+const GET_CIRCLE_STATE_SCRIPT = `
+
 `
