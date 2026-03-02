@@ -24,3 +24,6 @@
 //  Each receipt JSON includes a previousReceiptCID field - we follow that
 //  chain backward until we hit null (the genesis receipt).
 //
+// PERFORMANCE:
+//  We limnit chain walking to 50 receipts per load to avoid blocking the UI
+//  
