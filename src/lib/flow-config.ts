@@ -119,7 +119,35 @@ fcl.config()
   .put(
     '0xChamaManager',
     CONTRACT_ADDRESSES[FLOW_NETWORK]?.ChamaManager || CONTRACT_ADDRESSES.emulator.ChamaManager,
-  );
+  )
+  // ─────────────────────────────────────────────────────────────────────────
+  // System Contract Aliases
+  // ─────────────────────────────────────────────────────────────────────────
+  //
+  // FungibleToken and FlowToken are pre-deployed system contracts on Flow.
+  // Their addresses differ per network. Our Cadence transactions import them
+  // as `import FungibleToken from 0xFungibleToken` — FCL substitutes these
+  // placeholders at runtime using these config entries.
+  //
+  // ADDRESSES BY NETWORK:
+  //   Emulator:  0xee82856bf20e2aa6 (FungibleToken), 0x0ae53cb6e3f42a79 (FlowToken)
+  //   Testnet:   0x9a0766d93b6608b7 (FungibleToken), 0x7e60df042a9c0868 (FlowToken)
+  //   Mainnet:   0xf233dcee88fe0abe (FungibleToken), 0x1654653399040a61 (FlowToken)
+  //
+  // WHY NOT IN CONTRACT_ADDRESSES above?
+  //   These are Flow platform contracts, not our custom contracts. Keeping them
+  //   separate makes it clear which addresses we control vs. which are standard.
+  // ─────────────────────────────────────────────────────────────────────────
+  .put('0xFungibleToken', FLOW_NETWORK === 'mainnet'
+    ? '0xf233dcee88fe0abe'
+    : FLOW_NETWORK === 'testnet'
+      ? '0x9a0766d93b6608b7'
+      : '0xee82856bf20e2aa6')
+  .put('0xFlowToken', FLOW_NETWORK === 'mainnet'
+    ? '0x1654653399040a61'
+    : FLOW_NETWORK === 'testnet'
+      ? '0x7e60df042a9c0868'
+      : '0x0ae53cb6e3f42a79');
 
 // =============================================================================
 // Exports
