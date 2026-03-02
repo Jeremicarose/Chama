@@ -15,3 +15,5 @@
 //    4. Render receipts as a vertical timeline (newest first)
 //
 // WHY A SEPARATE PAGE (not a tab on Circle Detail)?
+//  The receipt chain can be long (one receipt per action per cycle). Mixing
+//   
