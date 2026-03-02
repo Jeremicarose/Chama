@@ -21,4 +21,6 @@
 //
 // IPFS FETCHING:
 //  Receipts are fetched client-side from the Storacha gateway (w3s.link).
-//  Each receipt JSON includes a previousRece
+//  Each receipt JSON includes a previousReceiptCID field - we follow that
+//  chain backward until we hit null (the genesis receipt).
+//
