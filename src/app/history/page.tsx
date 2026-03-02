@@ -84,3 +84,6 @@ interface CircleSummary {
   status: string;
   latestReceiptCID: string;
 }
+
+// __ Receipt shape from IPFS __
+// This mirrors the ReceiptData interface from receipt-service.ts
