@@ -63,5 +63,8 @@ access(all) fun main(circleId: UInt64): Address? {
 const GET_CIRCLE_STATE_SCRIPT = `
 import ChamaCircle from 0xChamaCircle
 
-access(all) fun main(hostAddress: Address, circleId: UInt)
+access(all) fun main(hostAddress: Address, circleId: UInt64): AnyStruct {
+    let host = getAccount(hostAddress)
+    let publicPath = PublicPath()
+}
 `
