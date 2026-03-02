@@ -45,5 +45,7 @@ import { fcl } from '@/lib/flow-config';
 // which circles a user belong to, then fetch each circle's state.
 
 const GET_MEMBER_CIRCLES_SCRIPT = `
-import ChamaManag
+import ChamaManager from 0xChamaManager
+
+access(all) fun main(member: Address ): []
 `
