@@ -78,4 +78,9 @@ access(all) fun main(hostAddress: Address, circleId: UInt64): AnyStruct {
 // Types
 // ==================================================================================
 
-interface Circle
+interface CircleSummary {
+  circleId: string;
+  name: string;
+  status: string;
+  latestReceiptCID: string;
+}
