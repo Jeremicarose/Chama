@@ -93,5 +93,8 @@ interface Receipt {
   action: string;
   actor: string;
   timestamp: string;
-  details: Record<string
+  details: Record<string, unknown>;
+  previousReceiptCID: string | null;
+  transactionId?: string;
+
 }
