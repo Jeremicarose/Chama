@@ -26,4 +26,5 @@
 //
 // PERFORMANCE:
 //  We limnit chain walking to 50 receipts per load to avoid blocking the UI
-//  
+//  on circles with hundreds of cycles. A "Load More" button continues from
+//  where we left off.
