@@ -4,4 +4,5 @@
 //
 // PURPOSE:
 //    Displays the full recipt chain for each circle the user belongs to.
-//    
+//    Each on-chain action (join, contribute, payout, penalty) produces an IPFS
+//    receipt linked to the pre
