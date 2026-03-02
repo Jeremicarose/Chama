@@ -20,4 +20,5 @@
 //  workflow. A dedicated page lets users focus on auditing when they want to.
 //
 // IPFS FETCHING:
-//  
+//  Receipts are fetched client-side from the Storacha gateway (w3s.link).
+//  Each receipt JSON includes a previousRece
