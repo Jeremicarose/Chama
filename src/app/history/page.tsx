@@ -34,4 +34,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { useCurrentUser } from '@/hooks'
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { fcl } from '@/lib/flow-config';
+
+// =====================================================================================
