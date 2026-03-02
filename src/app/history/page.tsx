@@ -70,6 +70,6 @@ access(all) fun main(hostAddress: Address, circleId: UInt64): AnyStruct {
     let circleRef = host.capabilities
         .borrow<&ChamaCircle.Circle>(publicPath)
         ?? panic("Could not borrow Circle")
-    return circleRef.getSt        
+    return circleRef.getState        
 }
 `
