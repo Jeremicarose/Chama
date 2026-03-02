@@ -17,4 +17,7 @@
 // WHY A SEPARATE PAGE (not a tab on Circle Detail)?
 //  The receipt chain can be long (one receipt per action per cycle). Mixing
 //  it into the Circle Details page would clutter the primary "contribute now"
-//  wor
+//  workflow. A dedicated page lets users focus on auditing when they want to.
+//
+// IPFS FETCHING:
+//  
