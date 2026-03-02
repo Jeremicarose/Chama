@@ -68,6 +68,8 @@ access(all) fun main(hostAddress: Address, circleId: UInt64): AnyStruct {
     let publicPath = PublicPath(identifier: "chamaCircle_".concat(circleId.toString()))
         ?? pamic("Could not construct public path")
     let circleRef = host.capabilities
-        .borrow<&ChamaCir    
+        .borrow<&ChamaCircle.Circle>(publicPath)
+        ?? panic("Could not borrow Circle")
+    return circleRef.getSt        
 }
 `
