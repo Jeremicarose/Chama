@@ -48,7 +48,8 @@ function truncateAddress(addr: string): string {
 // Each entry has a label (display text) and href (route path).
 const NAV_LINKS = [
   { label: 'Dashboard', href: '/' },
-  { label: 'Create Circle', href: '/create' },
+  { label: 'Create', href: '/create' },
+  { label: 'Join', href: '/join' },
   { label: 'History', href: '/history' },
 ];
 
