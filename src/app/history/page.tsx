@@ -115,5 +115,5 @@ interface ReceiptEntry {
 
 const ACTION_CONFIG: Record<string, { label: string; color: string; icon: string }> = {
   circle_created:   { label: 'Circle Created',    color: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300',     icon: '+'},
-  member_joined:    { label: 'Member Joined',     color: 'bg-indigo-100 text-indigo-700 dark:'}
+  member_joined:    { label: 'Member Joined',     color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300', icon: ''},
 }
