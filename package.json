@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "emulator": "flow emulator start",
+    "dev-wallet": "flow dev-wallet",
+    "deploy:emulator": "flow project deploy --network emulator",
+    "chain": "flow emulator start & sleep 3 && flow project deploy --network emulator && flow dev-wallet"
   },
   "dependencies": {
     "@ipld/car": "^5.4.2",
