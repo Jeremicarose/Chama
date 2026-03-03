@@ -113,4 +113,6 @@ interface ReceiptEntry {
 // Each action type gets a distinct visual treatment so users can scan the
 // timeline quickly and spot payouts, penalties, etc.
 
-const ACTION_CONFIG: Record<string, { label: string; color: }
+const ACTION_CONFIG: Record<string, { label: string; color: string; icon: string }> = {
+  circle_created:   { label: 'Circle Created'}
+}
