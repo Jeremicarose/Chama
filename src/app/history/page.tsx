@@ -111,4 +111,6 @@ interface ReceiptEntry {
 //
 // Maps receipt action strings to human-readable labels and color classes.
 // Each action type gets a distinct visual treatment so users can scan the
-// timeline quickly and spot pay
+// timeline quickly and spot payouts, penalties, etc.
+
+const ACTION_CONFIG: Record<string, { label: string; color: }
