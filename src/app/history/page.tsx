@@ -109,4 +109,6 @@ interface ReceiptEntry {
 // Action Label Map
 // ==========================================================================
 //
-// Maps receipt action strings to human-readable labels and color classes
+// Maps receipt action strings to human-readable labels and color classes.
+// Each action type gets a distinct visual treatment so users can scan the
+// timeline quickly and spot pay
