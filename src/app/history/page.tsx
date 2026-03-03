@@ -114,5 +114,6 @@ interface ReceiptEntry {
 // timeline quickly and spot payouts, penalties, etc.
 
 const ACTION_CONFIG: Record<string, { label: string; color: string; icon: string }> = {
-  circle_created:   { label: 'Circle Created',    color: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dar'}
+  circle_created:   { label: 'Circle Created',    color: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300',     icon: '+'},
+  member_joined:    { label}
 }
