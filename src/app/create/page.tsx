@@ -178,6 +178,8 @@ export default function CreateCirclePage() {
       // args: FCL uses a builder pattern. arg(value, type) creates
       // typed arguments that match the Cadence transaction parameters.
       // UFix64 values must be strings with decimal points (e.g., "10.0").
+      showToast({ status: 'pending', message: 'Approve the transaction in your wallet...' });
+
       const txId = await fcl.mutate({
         cadence: CREATE_CIRCLE_TX,
         args: (arg: any, t: any) => [
@@ -198,6 +200,8 @@ export default function CreateCirclePage() {
       // "Sealed" means the transaction is finalized on-chain (irreversible).
       // On testnet this takes ~5-10 seconds. On emulator it's instant.
       // onceSealed() returns the full transaction result including events.
+      showToast({ status: 'sealing', message: 'Transaction sent — waiting for confirmation...', txId });
+
       const txResult = await fcl.tx(txId).onceSealed();
 
       // ── Extract the circle ID from the CircleCreated event ──
@@ -208,16 +212,18 @@ export default function CreateCirclePage() {
         (e: any) => e.type.includes('ChamaCircle.CircleCreated')
       );
 
+      showToast({ status: 'sealed', message: 'Circle created successfully!', txId });
+
       if (createdEvent) {
         const circleId = createdEvent.data.circleId;
-        router.push(`/circle/${circleId}`);
+        // Short delay so user sees the success toast before redirect
+        setTimeout(() => router.push(`/circle/${circleId}`), 1500);
       } else {
-        // Fallback: redirect to dashboard if we can't find the event
-        router.push('/');
+        setTimeout(() => router.push('/'), 1500);
       }
     } catch (err: any) {
       console.error('CreateCircle failed:', err);
-      // FCL errors often have a readable message in err.message
+      showToast({ status: 'error', message: err?.message || 'Transaction failed.' });
       setError(err?.message || 'Transaction failed. Please try again.');
     } finally {
       setSubmitting(false);
