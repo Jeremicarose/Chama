@@ -33,6 +33,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { fcl } from '@/lib/flow-config';
+import { useTransactionToast } from '@/components/TransactionToast';
 
 // =============================================================================
 // CreateCircle Transaction (Cadence template)
