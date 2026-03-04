@@ -1,26 +1,6 @@
 // =============================================================================
 // circle/[id]/page.tsx — Circle detail page with members, contributions, actions
 // =============================================================================
-//
-// PURPOSE:
-//   Shows everything about a specific circle:
-//   - Header: name, status badge, cycle progress
-//   - Countdown timer to next payout deadline
-//   - Members list with contribution status per cycle
-//   - Action buttons: Join, Contribute, View Receipts
-//   - Payout history (which member received in which cycle)
-//
-// ROUTE:
-//   /circle/[id] where [id] is the circle's UInt64 ID (e.g., /circle/1)
-//   Next.js extracts the ID via params.id (dynamic route segment).
-//
-// DATA FLOW:
-//   1. Extract circleId from URL params
-//   2. Query ChamaManager.getCircleHost(id) → host address
-//   3. Query ChamaCircle.getState(host, id) → full state
-//   4. Render based on status (FORMING → show join, ACTIVE → show contribute)
-//   5. Auto-refresh every 10 seconds to pick up new contributions
-// =============================================================================
 
 'use client';
 
@@ -152,28 +132,56 @@ interface CircleData {
 // Helpers
 // =============================================================================
 
-const STATUS_LABELS: Record<string, string> = {
-  '0': 'Forming', '1': 'Active', '2': 'Completed', '3': 'Cancelled',
+const STATUS_CONFIG: Record<string, { label: string; color: string; glow: string }> = {
+  '0': {
+    label: 'Forming',
+    color: 'bg-sky-500/10 text-sky-400 ring-1 ring-sky-500/20',
+    glow: 'shadow-sky-500/5',
+  },
+  '1': {
+    label: 'Active',
+    color: 'bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20',
+    glow: 'shadow-emerald-500/5',
+  },
+  '2': {
+    label: 'Completed',
+    color: 'bg-zinc-500/10 text-zinc-400 ring-1 ring-zinc-500/20',
+    glow: '',
+  },
+  '3': {
+    label: 'Cancelled',
+    color: 'bg-red-500/10 text-red-400 ring-1 ring-red-500/20',
+    glow: '',
+  },
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  '0': 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300',
-  '1': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300',
-  '2': 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400',
-  '3': 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300',
-};
-
-function truncateAddress(addr: string): string {
+function truncAddr(addr: string): string {
   if (addr.length <= 10) return addr;
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+}
+
+function fmtFlow(val: string): string {
+  const n = parseFloat(val);
+  if (isNaN(n)) return '0.00';
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function fmtPercent(val: string): string {
+  return `${parseFloat(val).toFixed(0)}%`;
+}
+
+function fmtDuration(seconds: string): string {
+  const s = parseFloat(seconds);
+  if (s < 60) return `${s.toFixed(0)}s`;
+  if (s < 3600) return `${(s / 60).toFixed(0)} min`;
+  if (s < 86400) return `${(s / 3600).toFixed(1)} hr`;
+  return `${(s / 86400).toFixed(1)} days`;
 }
 
 // =============================================================================
 // Countdown Hook
 // =============================================================================
-//
-// Formats seconds remaining until deadline as "Xm Ys" or "EXPIRED".
-// Updates every second via setInterval.
+
 function useCountdown(deadlineTimestamp: number): string {
   const [now, setNow] = useState(Date.now() / 1000);
 
@@ -183,19 +191,109 @@ function useCountdown(deadlineTimestamp: number): string {
   }, []);
 
   if (deadlineTimestamp <= 0) return '--';
-
   const remaining = deadlineTimestamp - now;
   if (remaining <= 0) return 'EXPIRED';
-
   const minutes = Math.floor(remaining / 60);
   const seconds = Math.floor(remaining % 60);
-
   if (minutes > 60) {
     const hours = Math.floor(minutes / 60);
     return `${hours}h ${minutes % 60}m`;
   }
+  return `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
+}
 
-  return `${minutes}m ${seconds}s`;
+// =============================================================================
+// Sub-components
+// =============================================================================
+
+function StatCard({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div className="group relative overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-900/60 p-4 backdrop-blur-sm transition-all duration-300 hover:border-zinc-700/80 hover:bg-zinc-900/80">
+      <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent" />
+      <p className="relative text-[11px] font-medium uppercase tracking-wider text-zinc-500">
+        {label}
+      </p>
+      <p className={`relative mt-2 text-xl font-semibold tracking-tight ${accent ? 'text-emerald-400' : 'text-zinc-100'}`}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function MemberRow({
+  member,
+  index,
+  isYou,
+  isActive,
+}: {
+  member: MemberData;
+  index: number;
+  isYou: boolean;
+  isActive: boolean;
+}) {
+  return (
+    <div className={`flex items-center justify-between px-4 py-3 transition-colors ${isYou ? 'bg-emerald-500/[0.03]' : ''}`}>
+      <div className="flex items-center gap-3">
+        <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${
+          isYou
+            ? 'bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30'
+            : 'bg-zinc-800 text-zinc-400'
+        }`}>
+          {index + 1}
+        </div>
+        <div>
+          <p className="flex items-center gap-2 font-mono text-sm text-zinc-200">
+            {truncAddr(member.address)}
+            {isYou && (
+              <span className="rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
+                You
+              </span>
+            )}
+          </p>
+          <p className="mt-0.5 text-xs text-zinc-500">
+            {fmtFlow(member.totalContributed)} FLOW contributed
+            {member.isDelinquent && parseInt(member.delinquencyCount) > 0 && (
+              <span className="ml-2 text-red-400/80">
+                {parseInt(member.delinquencyCount)}x missed
+              </span>
+            )}
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        {isActive && (
+          member.hasContributed ? (
+            <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-400 ring-1 ring-emerald-500/20">
+              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+              </svg>
+              Paid
+            </span>
+          ) : (
+            <span className="rounded-full bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-400 ring-1 ring-amber-500/20">
+              Pending
+            </span>
+          )
+        )}
+        {member.isDelinquent && (
+          <span className="rounded-full bg-red-500/10 px-2.5 py-1 text-[11px] font-medium text-red-400 ring-1 ring-red-500/20">
+            Delinquent
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EmptySlot({ position }: { position: number }) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-3">
+      <div className="flex h-8 w-8 items-center justify-center rounded-full border border-dashed border-zinc-700 text-xs text-zinc-600">
+        {position}
+      </div>
+      <span className="text-sm italic text-zinc-600">Waiting for member...</span>
+    </div>
+  );
 }
 
 // =============================================================================
@@ -206,7 +304,6 @@ export default function CircleDetailPage() {
   const params = useParams();
   const circleId = params.id as string;
   const { user } = useCurrentUser();
-
   const { showToast, ToastComponent } = useTransactionToast();
 
   const [circle, setCircle] = useState<CircleData | null>(null);
@@ -215,37 +312,25 @@ export default function CircleDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // ── Countdown to next deadline ──
-  const countdown = useCountdown(
-    circle ? parseFloat(circle.nextDeadline) : 0
-  );
+  const countdown = useCountdown(circle ? parseFloat(circle.nextDeadline) : 0);
 
-  // -------------------------------------------------------------------------
-  // Fetch circle state
-  // -------------------------------------------------------------------------
+  // ── Fetch circle state ──
   const fetchCircle = useCallback(async () => {
     try {
       const host: string | null = await fcl.query({
         cadence: GET_CIRCLE_HOST_SCRIPT,
         args: (arg: any, t: any) => [arg(circleId, t.UInt64)],
       });
-
       if (!host) {
         setError('Circle not found.');
         setLoading(false);
         return;
       }
-
       setHostAddress(host);
-
       const state: CircleData = await fcl.query({
         cadence: GET_CIRCLE_STATE_SCRIPT,
-        args: (arg: any, t: any) => [
-          arg(host, t.Address),
-          arg(circleId, t.UInt64),
-        ],
+        args: (arg: any, t: any) => [arg(host, t.Address), arg(circleId, t.UInt64)],
       });
-
       setCircle(state);
       setError(null);
     } catch (err) {
@@ -256,16 +341,13 @@ export default function CircleDetailPage() {
     }
   }, [circleId]);
 
-  // ── Auto-fetch + refresh every 10 seconds ──
   useEffect(() => {
     fetchCircle();
     const interval = setInterval(fetchCircle, 10000);
     return () => clearInterval(interval);
   }, [fetchCircle]);
 
-  // -------------------------------------------------------------------------
-  // Actions: Join + Contribute
-  // -------------------------------------------------------------------------
+  // ── Actions ──
   async function handleJoin() {
     if (!hostAddress) return;
     setActionLoading(true);
@@ -274,14 +356,9 @@ export default function CircleDetailPage() {
       showToast({ status: 'pending', message: 'Approve the join transaction in your wallet...' });
       const txId = await fcl.mutate({
         cadence: JOIN_CIRCLE_TX,
-        args: (arg: any, t: any) => [
-          arg(hostAddress, t.Address),
-          arg(circleId, t.UInt64),
-        ],
-        proposer: fcl.currentUser,
-        payer: fcl.currentUser,
-        authorizations: [fcl.currentUser],
-        limit: 9999,
+        args: (arg: any, t: any) => [arg(hostAddress, t.Address), arg(circleId, t.UInt64)],
+        proposer: fcl.currentUser, payer: fcl.currentUser,
+        authorizations: [fcl.currentUser], limit: 9999,
       });
       showToast({ status: 'sealing', message: 'Joining circle — confirming on-chain...', txId });
       await fcl.tx(txId).onceSealed();
@@ -303,14 +380,9 @@ export default function CircleDetailPage() {
       showToast({ status: 'pending', message: 'Approve the contribution in your wallet...' });
       const txId = await fcl.mutate({
         cadence: CONTRIBUTE_TX,
-        args: (arg: any, t: any) => [
-          arg(hostAddress, t.Address),
-          arg(circleId, t.UInt64),
-        ],
-        proposer: fcl.currentUser,
-        payer: fcl.currentUser,
-        authorizations: [fcl.currentUser],
-        limit: 9999,
+        args: (arg: any, t: any) => [arg(hostAddress, t.Address), arg(circleId, t.UInt64)],
+        proposer: fcl.currentUser, payer: fcl.currentUser,
+        authorizations: [fcl.currentUser], limit: 9999,
       });
       showToast({ status: 'sealing', message: 'Contributing — confirming on-chain...', txId });
       await fcl.tx(txId).onceSealed();
@@ -330,17 +402,25 @@ export default function CircleDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex justify-center py-20">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-zinc-300 border-t-emerald-600" />
+      <div className="flex flex-col items-center justify-center py-32">
+        <div className="relative h-10 w-10">
+          <div className="absolute inset-0 animate-spin rounded-full border-2 border-zinc-800 border-t-emerald-500" />
+        </div>
+        <p className="mt-4 text-sm text-zinc-500">Loading circle...</p>
       </div>
     );
   }
 
   if (error && !circle) {
     return (
-      <div className="py-20 text-center">
-        <p className="text-red-600 dark:text-red-400">{error}</p>
-        <Link href="/" className="mt-4 inline-block text-sm text-emerald-600 underline">
+      <div className="flex flex-col items-center py-32 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-500/10 ring-1 ring-red-500/20">
+          <svg className="h-6 w-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+          </svg>
+        </div>
+        <p className="mt-4 text-sm text-red-400">{error}</p>
+        <Link href="/" className="mt-4 text-sm text-emerald-500 hover:text-emerald-400 transition-colors">
           Back to Dashboard
         </Link>
       </div>
@@ -350,90 +430,147 @@ export default function CircleDetailPage() {
   if (!circle) return null;
 
   const statusRaw = circle.status.rawValue;
+  const status = STATUS_CONFIG[statusRaw] || STATUS_CONFIG['0'];
   const isForming = statusRaw === '0';
   const isActive = statusRaw === '1';
   const isCompleted = statusRaw === '2';
 
-  // Check if current user is a member and if they've contributed this cycle
-  const currentMember = circle.members.find(
-    (m) => m.address === user.addr
-  );
+  const currentMember = circle.members.find((m) => m.address === user.addr);
   const isMember = !!currentMember;
   const hasContributed = currentMember?.hasContributed ?? false;
-
-  // Can the user join? (forming + not already a member + wallet connected)
   const canJoin = isForming && !isMember && user.loggedIn;
-
-  // Can the user contribute? (active + is member + hasn't contributed yet)
   const canContribute = isActive && isMember && !hasContributed;
 
+  const maxMembers = parseInt(circle.config.maxMembers);
+  const memberCount = circle.members.length;
+  const progressPercent = maxMembers > 0 ? (memberCount / maxMembers) * 100 : 0;
+  const payoutAmount = (parseFloat(circle.config.contributionAmount) * maxMembers).toFixed(2);
+
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-3xl pb-16">
       <ToastComponent />
-      {/* ── Header ── */}
-      <div className="flex items-start justify-between">
-        <div>
-          <Link href="/" className="text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">
-            &larr; Dashboard
-          </Link>
-          <h1 className="mt-1 text-2xl font-bold text-zinc-900 dark:text-zinc-50">
-            {circle.config.name}
-          </h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            Circle #{circle.circleId}
-          </p>
+
+      {/* ── Breadcrumb ── */}
+      <Link
+        href="/"
+        className="group inline-flex items-center gap-1.5 text-sm text-zinc-500 transition-colors hover:text-zinc-300"
+      >
+        <svg className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+        </svg>
+        Dashboard
+      </Link>
+
+      {/* ── Hero Header ── */}
+      <div className="mt-4 relative overflow-hidden rounded-2xl border border-zinc-800/80 bg-gradient-to-br from-zinc-900 via-zinc-900/95 to-zinc-900/90 p-6 sm:p-8">
+        {/* Subtle gradient orb in background */}
+        <div className="pointer-events-none absolute -right-20 -top-20 h-60 w-60 rounded-full bg-emerald-500/[0.04] blur-3xl" />
+        <div className="pointer-events-none absolute -left-10 -bottom-10 h-40 w-40 rounded-full bg-sky-500/[0.03] blur-3xl" />
+
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold tracking-tight text-zinc-50 sm:text-3xl">
+                {circle.config.name}
+              </h1>
+              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${status.color}`}>
+                {status.label}
+              </span>
+            </div>
+            <p className="mt-1.5 flex items-center gap-2 text-sm text-zinc-400">
+              <span className="font-mono text-zinc-500">#{circle.circleId}</span>
+              <span className="text-zinc-700">|</span>
+              <span>{fmtFlow(payoutAmount)} FLOW payout per cycle</span>
+            </p>
+          </div>
+
+          {/* Share circle ID */}
+          <div className="flex items-center gap-2 rounded-xl bg-zinc-800/50 px-3 py-2 ring-1 ring-zinc-700/50">
+            <span className="text-[11px] uppercase tracking-wider text-zinc-500">Share ID</span>
+            <span className="font-mono text-sm font-semibold text-zinc-200">{circle.circleId}</span>
+          </div>
         </div>
-        <span className={`mt-1 rounded-full px-3 py-1 text-sm font-medium ${STATUS_COLORS[statusRaw]}`}>
-          {STATUS_LABELS[statusRaw]}
-        </span>
+
+        {/* Member fill progress bar */}
+        {isForming && (
+          <div className="relative mt-6">
+            <div className="flex items-center justify-between text-xs text-zinc-500">
+              <span>{memberCount} of {maxMembers} members</span>
+              <span>{(100 - progressPercent).toFixed(0)}% slots remaining</span>
+            </div>
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-700"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Error Banner ── */}
       {error && (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+        <div className="mt-4 flex items-center gap-3 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-400">
+          <svg className="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
           {error}
         </div>
       )}
 
       {/* ── Stats Grid ── */}
-      <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        {[
-          { label: 'Contribution', value: `${parseFloat(circle.config.contributionAmount).toFixed(2)} FLOW` },
-          { label: 'Pool Balance', value: `${parseFloat(circle.poolBalance).toFixed(2)} FLOW` },
-          { label: 'Cycle', value: `${circle.currentCycle}/${circle.config.maxMembers}` },
-          { label: 'Next Payout', value: isActive ? countdown : '--' },
-        ].map((stat) => (
-          <div key={stat.label} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
-            <p className="text-xs text-zinc-500 dark:text-zinc-500">{stat.label}</p>
-            <p className="mt-1 text-lg font-semibold text-zinc-900 dark:text-zinc-50">{stat.value}</p>
-          </div>
-        ))}
+      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatCard label="Contribution" value={`${fmtFlow(circle.config.contributionAmount)} FLOW`} />
+        <StatCard label="Pool Balance" value={`${fmtFlow(circle.poolBalance)} FLOW`} accent />
+        <StatCard label="Cycle" value={`${circle.currentCycle} / ${circle.config.maxMembers}`} />
+        <StatCard label="Next Payout" value={isActive ? countdown : '--'} />
       </div>
 
-      {/* ── Current Recipient Banner ── */}
+      {/* ── Recipient Banner ── */}
       {isActive && circle.nextRecipient && (
-        <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-800 dark:bg-emerald-950">
-          <p className="text-sm text-emerald-700 dark:text-emerald-300">
-            <span className="font-medium">Payout recipient this cycle:</span>{' '}
-            <span className="font-mono">{truncateAddress(circle.nextRecipient)}</span>
-            {circle.nextRecipient === user.addr && (
-              <span className="ml-2 rounded bg-emerald-200 px-1.5 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-800 dark:text-emerald-200">
-                You!
-              </span>
-            )}
-          </p>
+        <div className="mt-4 flex items-center gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] px-5 py-4">
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500/15 ring-1 ring-emerald-500/25">
+            <svg className="h-4 w-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wider text-emerald-500/70">Payout Recipient</p>
+            <p className="mt-0.5 font-mono text-sm text-emerald-300">
+              {truncAddr(circle.nextRecipient)}
+              {circle.nextRecipient === user.addr && (
+                <span className="ml-2 rounded-md bg-emerald-400/20 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-emerald-300">
+                  You!
+                </span>
+              )}
+            </p>
+          </div>
         </div>
       )}
 
-      {/* ── Action Buttons ── */}
-      <div className="mt-6 flex gap-3">
+      {/* ── Action Area ── */}
+      <div className="mt-6">
         {canJoin && (
           <button
             onClick={handleJoin}
             disabled={actionLoading}
-            className="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+            className="group relative w-full overflow-hidden rounded-2xl bg-emerald-600 py-4 text-sm font-semibold text-white shadow-lg shadow-emerald-500/20 transition-all hover:bg-emerald-500 hover:shadow-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {actionLoading ? 'Joining...' : `Join Circle (${parseFloat(circle.config.contributionAmount).toFixed(2)} FLOW deposit)`}
+            <span className="relative z-10 flex items-center justify-center gap-2">
+              {actionLoading ? (
+                <>
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  Joining...
+                </>
+              ) : (
+                <>
+                  Join Circle
+                  <span className="rounded-md bg-white/20 px-2 py-0.5 text-xs">
+                    {fmtFlow(circle.config.contributionAmount)} FLOW deposit
+                  </span>
+                </>
+              )}
+            </span>
           </button>
         )}
 
@@ -441,118 +578,105 @@ export default function CircleDetailPage() {
           <button
             onClick={handleContribute}
             disabled={actionLoading}
-            className="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+            className="group relative w-full overflow-hidden rounded-2xl bg-emerald-600 py-4 text-sm font-semibold text-white shadow-lg shadow-emerald-500/20 transition-all hover:bg-emerald-500 hover:shadow-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {actionLoading ? 'Contributing...' : `Contribute ${parseFloat(circle.config.contributionAmount).toFixed(2)} FLOW`}
+            <span className="relative z-10 flex items-center justify-center gap-2">
+              {actionLoading ? (
+                <>
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  Contributing...
+                </>
+              ) : (
+                <>
+                  Contribute
+                  <span className="rounded-md bg-white/20 px-2 py-0.5 text-xs">
+                    {fmtFlow(circle.config.contributionAmount)} FLOW
+                  </span>
+                </>
+              )}
+            </span>
           </button>
         )}
 
         {isMember && hasContributed && isActive && (
-          <div className="flex items-center rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-            Contributed this cycle
+          <div className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] py-4 text-sm font-medium text-emerald-400">
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+            </svg>
+            Contributed this cycle — waiting for payout
           </div>
         )}
 
         {isCompleted && (
-          <div className="flex items-center rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-2 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+          <div className="flex items-center justify-center gap-2 rounded-2xl border border-zinc-700/50 bg-zinc-800/30 py-4 text-sm text-zinc-400">
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
             Circle completed — deposits returned
           </div>
         )}
       </div>
 
-      {/* ── Members List ── */}
+      {/* ── Members ── */}
       <div className="mt-8">
-        <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-          Members ({circle.members.length}/{circle.config.maxMembers})
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold text-zinc-100">
+            Members
+          </h2>
+          <span className="rounded-full bg-zinc-800 px-2.5 py-0.5 text-xs font-medium text-zinc-400">
+            {memberCount}/{maxMembers}
+          </span>
+        </div>
 
-        <div className="mt-3 divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+        <div className="mt-3 overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-900/40 divide-y divide-zinc-800/60">
           {circle.members.map((member, i) => (
-            <div key={member.address} className="flex items-center justify-between px-4 py-3">
-              <div className="flex items-center gap-3">
-                {/* Position number */}
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-zinc-100 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                  {i + 1}
-                </span>
-
-                {/* Address + status indicators */}
-                <div>
-                  <p className="font-mono text-sm text-zinc-900 dark:text-zinc-100">
-                    {truncateAddress(member.address)}
-                    {member.address === user.addr && (
-                      <span className="ml-2 text-xs text-emerald-600 dark:text-emerald-400">(you)</span>
-                    )}
-                  </p>
-                  <p className="text-xs text-zinc-500">
-                    Total: {parseFloat(member.totalContributed).toFixed(2)} FLOW
-                    {member.isDelinquent && (
-                      <span className="ml-2 text-red-500">
-                        {parseInt(member.delinquencyCount)}x missed
-                      </span>
-                    )}
-                  </p>
-                </div>
-              </div>
-
-              {/* Contribution status for current cycle */}
-              <div>
-                {isActive && (
-                  member.hasContributed ? (
-                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300">
-                      Paid
-                    </span>
-                  ) : (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900 dark:text-amber-300">
-                      Pending
-                    </span>
-                  )
-                )}
-                {member.isDelinquent && (
-                  <span className="ml-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900 dark:text-red-300">
-                    Delinquent
-                  </span>
-                )}
-              </div>
-            </div>
+            <MemberRow
+              key={member.address}
+              member={member}
+              index={i}
+              isYou={member.address === user.addr}
+              isActive={isActive}
+            />
           ))}
-
-          {/* Empty slots for forming circles */}
           {isForming &&
-            Array.from({ length: parseInt(circle.config.maxMembers) - circle.members.length }).map((_, i) => (
-              <div key={`empty-${i}`} className="flex items-center gap-3 px-4 py-3 text-zinc-400 dark:text-zinc-600">
-                <span className="flex h-7 w-7 items-center justify-center rounded-full border border-dashed border-zinc-300 text-xs dark:border-zinc-700">
-                  {circle.members.length + i + 1}
-                </span>
-                <span className="text-sm italic">Waiting for member...</span>
-              </div>
+            Array.from({ length: maxMembers - memberCount }).map((_, i) => (
+              <EmptySlot key={`empty-${i}`} position={memberCount + i + 1} />
             ))}
         </div>
       </div>
 
-      {/* ── Circle Config Details ── */}
+      {/* ── Configuration ── */}
       <div className="mt-8">
-        <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Configuration</h2>
-        <div className="mt-3 grid grid-cols-2 gap-3 rounded-lg border border-zinc-200 p-4 text-sm dark:border-zinc-800">
-          <div className="text-zinc-500">Penalty per miss:</div>
-          <div className="font-medium text-zinc-900 dark:text-zinc-100">{circle.config.penaltyPercent}%</div>
-          <div className="text-zinc-500">Cycle duration:</div>
-          <div className="font-medium text-zinc-900 dark:text-zinc-100">{parseFloat(circle.config.cycleDuration).toFixed(0)}s</div>
-          <div className="text-zinc-500">Each payout:</div>
-          <div className="font-medium text-emerald-700 dark:text-emerald-400">
-            {(parseFloat(circle.config.contributionAmount) * parseInt(circle.config.maxMembers)).toFixed(2)} FLOW
-          </div>
+        <h2 className="text-base font-semibold text-zinc-100">Configuration</h2>
+        <div className="mt-3 overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-900/40">
+          {[
+            { label: 'Penalty per miss', value: fmtPercent(circle.config.penaltyPercent) },
+            { label: 'Cycle duration', value: fmtDuration(circle.config.cycleDuration) },
+            { label: 'Each payout', value: `${fmtFlow(payoutAmount)} FLOW`, accent: true },
+            { label: 'Max members', value: circle.config.maxMembers },
+          ].map((row, i) => (
+            <div key={row.label} className={`flex items-center justify-between px-4 py-3 ${i > 0 ? 'border-t border-zinc-800/60' : ''}`}>
+              <span className="text-sm text-zinc-500">{row.label}</span>
+              <span className={`text-sm font-medium ${row.accent ? 'text-emerald-400' : 'text-zinc-200'}`}>
+                {row.value}
+              </span>
+            </div>
+          ))}
           {circle.latestReceiptCID && (
-            <>
-              <div className="text-zinc-500">Latest receipt:</div>
+            <div className="flex items-center justify-between border-t border-zinc-800/60 px-4 py-3">
+              <span className="text-sm text-zinc-500">Latest receipt</span>
               <a
                 href={`https://${circle.latestReceiptCID}.ipfs.w3s.link`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="truncate font-mono text-emerald-600 underline hover:text-emerald-700 dark:text-emerald-400"
+                className="group flex items-center gap-1.5 font-mono text-xs text-emerald-500 transition-colors hover:text-emerald-400"
               >
-                {circle.latestReceiptCID.slice(0, 20)}...
+                {circle.latestReceiptCID.slice(0, 16)}...
+                <svg className="h-3 w-3 opacity-50 transition-opacity group-hover:opacity-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
               </a>
-            </>
+            </div>
           )}
         </div>
       </div>
