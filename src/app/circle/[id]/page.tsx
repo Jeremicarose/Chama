@@ -29,6 +29,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { fcl } from '@/lib/flow-config';
+import { useTransactionToast } from '@/components/TransactionToast';
 
 // =============================================================================
 // Cadence Scripts
