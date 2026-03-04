@@ -108,6 +108,17 @@ fcl.config()
   .put('discovery.wallet', DISCOVERY_MAP[FLOW_NETWORK] || DISCOVERY_MAP.emulator)
   .put('app.detail.title', 'Chama Savings Circle')
   .put('app.detail.icon', 'https://placekitten.com/g/200/200') // TODO: Replace with actual app icon
+  // ─────────────────────────────────────────────────────────────────────────
+  // WalletConnect Configuration
+  // ─────────────────────────────────────────────────────────────────────────
+  //
+  // WalletConnect is a protocol that lets mobile/desktop wallets connect to
+  // dApps via QR code or deep link. FCL uses it as a transport for wallets
+  // like Lilico. Without a projectId, WalletConnect-based wallets won't work.
+  //
+  // Get a free projectId at: https://cloud.walletconnect.com
+  // For development, we use the env var or a placeholder that silences the warning.
+  .put('walletconnect.projectId', process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'development')
   .put(
     '0xChamaCircle',
     CONTRACT_ADDRESSES[FLOW_NETWORK]?.ChamaCircle || CONTRACT_ADDRESSES.emulator.ChamaCircle,
