@@ -107,6 +107,7 @@ transaction(
 export default function CreateCirclePage() {
   const router = useRouter();
   const { user } = useCurrentUser();
+  const { showToast, ToastComponent } = useTransactionToast();
 
   // ── Form state ──
   // Each field maps to a CircleConfig parameter.
