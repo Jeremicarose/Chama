@@ -207,6 +207,8 @@ export default function CircleDetailPage() {
   const circleId = params.id as string;
   const { user } = useCurrentUser();
 
+  const { showToast, ToastComponent } = useTransactionToast();
+
   const [circle, setCircle] = useState<CircleData | null>(null);
   const [hostAddress, setHostAddress] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -269,6 +271,7 @@ export default function CircleDetailPage() {
     setActionLoading(true);
     setError(null);
     try {
+      showToast({ status: 'pending', message: 'Approve the join transaction in your wallet...' });
       const txId = await fcl.mutate({
         cadence: JOIN_CIRCLE_TX,
         args: (arg: any, t: any) => [
@@ -280,9 +283,12 @@ export default function CircleDetailPage() {
         authorizations: [fcl.currentUser],
         limit: 9999,
       });
+      showToast({ status: 'sealing', message: 'Joining circle — confirming on-chain...', txId });
       await fcl.tx(txId).onceSealed();
+      showToast({ status: 'sealed', message: 'Successfully joined the circle!', txId });
       await fetchCircle();
     } catch (err: any) {
+      showToast({ status: 'error', message: err?.message || 'Join failed.' });
       setError(err?.message || 'Join failed.');
     } finally {
       setActionLoading(false);
@@ -294,6 +300,7 @@ export default function CircleDetailPage() {
     setActionLoading(true);
     setError(null);
     try {
+      showToast({ status: 'pending', message: 'Approve the contribution in your wallet...' });
       const txId = await fcl.mutate({
         cadence: CONTRIBUTE_TX,
         args: (arg: any, t: any) => [
@@ -305,9 +312,12 @@ export default function CircleDetailPage() {
         authorizations: [fcl.currentUser],
         limit: 9999,
       });
+      showToast({ status: 'sealing', message: 'Contributing — confirming on-chain...', txId });
       await fcl.tx(txId).onceSealed();
+      showToast({ status: 'sealed', message: 'Contribution confirmed!', txId });
       await fetchCircle();
     } catch (err: any) {
+      showToast({ status: 'error', message: err?.message || 'Contribution failed.' });
       setError(err?.message || 'Contribution failed.');
     } finally {
       setActionLoading(false);
@@ -359,6 +369,7 @@ export default function CircleDetailPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
+      <ToastComponent />
       {/* ── Header ── */}
       <div className="flex items-start justify-between">
         <div>
