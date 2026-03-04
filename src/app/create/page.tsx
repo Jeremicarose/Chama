@@ -83,7 +83,7 @@ transaction(
         let cap = signer.capabilities.storage.issue<&ChamaCircle.Circle>(storagePath)
         signer.capabilities.publish(cap, at: publicPath)
 
-        ChamaManager.registerCircle(circleId: circleId, host: signer.address, name: name)
+        ChamaManager.registerCircle(circleId: circleId, name: name, host: signer.address)
 
         let circleRef = signer.storage.borrow<&ChamaCircle.Circle>(from: storagePath)
             ?? panic("Could not borrow circle")
