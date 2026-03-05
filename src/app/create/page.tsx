@@ -1,52 +1,19 @@
 // =============================================================================
 // create/page.tsx — Create a new savings circle
 // =============================================================================
-//
-// PURPOSE:
-//   Form page where users configure and launch a new Chama circle.
-//   Submitting the form sends a CreateCircle transaction to Flow.
-//
-// FORM FIELDS:
-//   - Circle Name: display name (e.g., "Office Lunch Fund")
-//   - Contribution Amount: FLOW per cycle per member
-//   - Cycle Duration: seconds between payouts (60s for demo, days for real)
-//   - Max Members: circle size = number of cycles (2–20)
-//   - Penalty Percent: % of deposit forfeited per missed contribution
-//
-// VALIDATION:
-//   Client-side validation mirrors the Cadence pre-conditions in CircleConfig.
-//   This gives instant feedback without waiting for a blockchain error.
-//   The contract still enforces its own rules — client validation is UX only.
-//
-// TRANSACTION FLOW:
-//   1. User fills form → clicks "Create Circle"
-//   2. We call fcl.mutate() with the CreateCircle.cdc transaction
-//   3. FCL opens the wallet for signing approval
-//   4. Transaction is sent to Flow → sealed in ~5-10 seconds (testnet)
-//   5. We parse the CircleCreated event to get the new circle ID
-//   6. Redirect to /circle/[id] to view the new circle
-// =============================================================================
 
 'use client';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { fcl } from '@/lib/flow-config';
 import { useTransactionToast } from '@/components/TransactionToast';
 
 // =============================================================================
-// CreateCircle Transaction (Cadence template)
+// Cadence Transaction
 // =============================================================================
-//
-// This is the same Cadence code as cadence/transactions/CreateCircle.cdc,
-// but with 0xChamaCircle/0xChamaManager placeholders that FCL substitutes
-// at runtime using the config from flow-config.ts.
-//
-// WHY INLINE (not reading the .cdc file)?
-//   Next.js client components can't read the filesystem. We'd need a build
-//   step to embed .cdc files as strings. For now, inline is simpler.
-//   If the contract ABI changes, update both the .cdc file and this string.
 
 const CREATE_CIRCLE_TX = `
 import ChamaCircle from 0xChamaCircle
@@ -101,6 +68,26 @@ transaction(
 `;
 
 // =============================================================================
+// Helpers
+// =============================================================================
+
+function fmtFlow(val: string): string {
+  const n = parseFloat(val || '0');
+  if (isNaN(n)) return '0.00';
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// =============================================================================
+// Input styling constants
+// =============================================================================
+
+const INPUT_CLASSES =
+  'w-full rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-3 text-sm text-zinc-100 placeholder-zinc-600 outline-none transition-all focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 disabled:opacity-50';
+
+const LABEL_CLASSES = 'block text-sm font-medium text-zinc-300';
+const HINT_CLASSES = 'mt-1.5 text-xs text-zinc-600';
+
+// =============================================================================
 // Component
 // =============================================================================
 
@@ -109,77 +96,44 @@ export default function CreateCirclePage() {
   const { user } = useCurrentUser();
   const { showToast, ToastComponent } = useTransactionToast();
 
-  // ── Form state ──
-  // Each field maps to a CircleConfig parameter.
   const [name, setName] = useState('');
   const [contributionAmount, setContributionAmount] = useState('10.0');
   const [cycleDuration, setCycleDuration] = useState('120');
   const [maxMembers, setMaxMembers] = useState('4');
   const [penaltyPercent, setPenaltyPercent] = useState('50');
 
-  // ── Transaction state ──
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // -------------------------------------------------------------------------
-  // Form validation
-  // -------------------------------------------------------------------------
-  //
-  // Returns an error message if invalid, null if valid.
-  // Mirrors the Cadence pre-conditions so users get instant feedback.
+  // ── Derived values for summary ──
+  const contribution = parseFloat(contributionAmount || '0');
+  const members = parseInt(maxMembers || '0');
+  const totalPayout = contribution * members;
+
   function validate(): string | null {
     if (!name.trim()) return 'Circle name is required.';
     if (name.length > 50) return 'Circle name must be under 50 characters.';
-
-    const amount = parseFloat(contributionAmount);
-    if (isNaN(amount) || amount <= 0) return 'Contribution must be a positive number.';
-
+    if (isNaN(contribution) || contribution <= 0) return 'Contribution must be a positive number.';
     const duration = parseFloat(cycleDuration);
     if (isNaN(duration) || duration <= 0) return 'Cycle duration must be positive.';
-
-    const members = parseInt(maxMembers);
     if (isNaN(members) || members < 2) return 'Need at least 2 members.';
     if (members > 20) return 'Maximum 20 members per circle.';
-
     const penalty = parseFloat(penaltyPercent);
-    if (isNaN(penalty) || penalty < 0 || penalty > 100) return 'Penalty must be 0–100%.';
-
+    if (isNaN(penalty) || penalty < 0 || penalty > 100) return 'Penalty must be 0-100%.';
     return null;
   }
 
-  // -------------------------------------------------------------------------
-  // Submit: send CreateCircle transaction
-  // -------------------------------------------------------------------------
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-
-    // Client-side validation
     const validationError = validate();
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-
-    if (!user.loggedIn) {
-      setError('Please connect your wallet first.');
-      return;
-    }
+    if (validationError) { setError(validationError); return; }
+    if (!user.loggedIn) { setError('Please connect your wallet first.'); return; }
 
     setSubmitting(true);
     setError(null);
 
     try {
-      // ── Send the transaction via FCL ──
-      //
-      // fcl.mutate() sends a state-changing transaction.
-      // It returns a transaction ID (hash) immediately.
-      // The wallet will prompt the user to approve and sign.
-      //
-      // args: FCL uses a builder pattern. arg(value, type) creates
-      // typed arguments that match the Cadence transaction parameters.
-      // UFix64 values must be strings with decimal points (e.g., "10.0").
       showToast({ status: 'pending', message: 'Approve the transaction in your wallet...' });
-
       const txId = await fcl.mutate({
         cadence: CREATE_CIRCLE_TX,
         args: (arg: any, t: any) => [
@@ -195,29 +149,16 @@ export default function CreateCirclePage() {
         limit: 9999,
       });
 
-      // ── Wait for the transaction to be sealed ──
-      //
-      // "Sealed" means the transaction is finalized on-chain (irreversible).
-      // On testnet this takes ~5-10 seconds. On emulator it's instant.
-      // onceSealed() returns the full transaction result including events.
       showToast({ status: 'sealing', message: 'Transaction sent — waiting for confirmation...', txId });
-
       const txResult = await fcl.tx(txId).onceSealed();
 
-      // ── Extract the circle ID from the CircleCreated event ──
-      //
-      // Flow transactions emit events. We look for our CircleCreated event
-      // to get the new circle's ID for the redirect.
       const createdEvent = txResult.events?.find(
         (e: any) => e.type.includes('ChamaCircle.CircleCreated')
       );
-
       showToast({ status: 'sealed', message: 'Circle created successfully!', txId });
 
       if (createdEvent) {
-        const circleId = createdEvent.data.circleId;
-        // Short delay so user sees the success toast before redirect
-        setTimeout(() => router.push(`/circle/${circleId}`), 1500);
+        setTimeout(() => router.push(`/circle/${createdEvent.data.circleId}`), 1500);
       } else {
         setTimeout(() => router.push('/'), 1500);
       }
@@ -234,51 +175,63 @@ export default function CreateCirclePage() {
   // RENDER
   // =========================================================================
 
-  // ── Not connected: prompt to connect ──
   if (!user.loggedIn) {
     return (
-      <div className="flex flex-col items-center py-20 text-center">
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
-          Create a Circle
-        </h1>
-        <p className="mt-2 text-zinc-500 dark:text-zinc-400">
-          Connect your wallet to create a savings circle.
-        </p>
+      <div className="flex flex-col items-center py-32 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-zinc-800/50 ring-1 ring-zinc-700/50">
+          <svg className="h-6 w-6 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
+          </svg>
+        </div>
+        <h1 className="mt-4 text-xl font-semibold text-zinc-100">Create a Circle</h1>
+        <p className="mt-2 text-sm text-zinc-500">Connect your wallet to create a savings circle.</p>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-xl">
+    <div className="mx-auto max-w-lg pb-16">
       <ToastComponent />
-      <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
+
+      {/* ── Header ── */}
+      <Link
+        href="/"
+        className="group inline-flex items-center gap-1.5 text-sm text-zinc-500 transition-colors hover:text-zinc-300"
+      >
+        <svg className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+        </svg>
+        Dashboard
+      </Link>
+
+      <h1 className="mt-4 text-2xl font-bold tracking-tight text-zinc-50">
         Create a Circle
       </h1>
-      <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-        Configure your rotating savings circle. You&apos;ll automatically join as
-        the first member and pay the security deposit.
+      <p className="mt-1.5 text-sm text-zinc-500">
+        Configure your rotating savings circle. You&apos;ll join as member #1 and pay the security deposit.
       </p>
 
-      {/* ── Error display ── */}
+      {/* ── Error ── */}
       {error && (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+        <div className="mt-5 flex items-center gap-3 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-400">
+          <svg className="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
           {error}
         </div>
       )}
 
       {/* ── Form ── */}
-      <form onSubmit={handleSubmit} className="mt-6 space-y-5">
+      <form onSubmit={handleSubmit} className="mt-8 space-y-6">
         {/* Circle Name */}
         <div>
-          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Circle Name
-          </label>
+          <label className={LABEL_CLASSES}>Circle Name</label>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g., Office Lunch Fund"
-            className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder-zinc-600"
+            className={`mt-2 ${INPUT_CLASSES}`}
             disabled={submitting}
             maxLength={50}
           />
@@ -286,65 +239,67 @@ export default function CreateCirclePage() {
 
         {/* Contribution Amount */}
         <div>
-          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Contribution per Cycle (FLOW)
-          </label>
-          <input
-            type="number"
-            value={contributionAmount}
-            onChange={(e) => setContributionAmount(e.target.value)}
-            min="0.01"
-            step="0.01"
-            className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-            disabled={submitting}
-          />
-          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
-            Each member pays this amount every cycle. Also used as the security deposit.
+          <label className={LABEL_CLASSES}>Contribution per Cycle</label>
+          <div className="relative mt-2">
+            <input
+              type="number"
+              value={contributionAmount}
+              onChange={(e) => setContributionAmount(e.target.value)}
+              min="0.01"
+              step="0.01"
+              className={`${INPUT_CLASSES} pr-16`}
+              disabled={submitting}
+            />
+            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-medium text-zinc-500">
+              FLOW
+            </span>
+          </div>
+          <p className={HINT_CLASSES}>
+            Each member pays this every cycle. Also used as the security deposit.
           </p>
         </div>
 
         {/* Two columns: Members + Duration */}
         <div className="grid grid-cols-2 gap-4">
-          {/* Max Members */}
           <div>
-            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Max Members
-            </label>
+            <label className={LABEL_CLASSES}>Max Members</label>
             <input
               type="number"
               value={maxMembers}
               onChange={(e) => setMaxMembers(e.target.value)}
               min="2"
               max="20"
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+              className={`mt-2 ${INPUT_CLASSES}`}
               disabled={submitting}
             />
-            <p className="mt-1 text-xs text-zinc-500">2–20 members</p>
+            <p className={HINT_CLASSES}>2 – 20 members</p>
           </div>
-
-          {/* Cycle Duration */}
           <div>
-            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Cycle Duration (seconds)
-            </label>
-            <input
-              type="number"
-              value={cycleDuration}
-              onChange={(e) => setCycleDuration(e.target.value)}
-              min="10"
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-              disabled={submitting}
-            />
-            <p className="mt-1 text-xs text-zinc-500">120 = 2 min (demo)</p>
+            <label className={LABEL_CLASSES}>Cycle Duration</label>
+            <div className="relative mt-2">
+              <input
+                type="number"
+                value={cycleDuration}
+                onChange={(e) => setCycleDuration(e.target.value)}
+                min="10"
+                className={`${INPUT_CLASSES} pr-8`}
+                disabled={submitting}
+              />
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-medium text-zinc-500">
+                s
+              </span>
+            </div>
+            <p className={HINT_CLASSES}>120 = 2 min (demo)</p>
           </div>
         </div>
 
         {/* Penalty Percent */}
         <div>
-          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Penalty Percent
-          </label>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between">
+            <label className={LABEL_CLASSES}>Penalty per Missed Cycle</label>
+            <span className="text-sm font-semibold text-zinc-100">{penaltyPercent}%</span>
+          </div>
+          <div className="mt-3">
             <input
               type="range"
               value={penaltyPercent}
@@ -352,55 +307,56 @@ export default function CreateCirclePage() {
               min="0"
               max="100"
               step="5"
-              className="flex-1 accent-emerald-600"
+              className="w-full accent-emerald-500"
               disabled={submitting}
             />
-            <span className="w-12 text-right text-sm font-medium text-zinc-900 dark:text-zinc-100">
-              {penaltyPercent}%
-            </span>
-          </div>
-          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
-            Percentage of deposit forfeited per missed contribution. 0% = no penalty, 100% = full forfeit.
-          </p>
-        </div>
-
-        {/* ── Summary Box ── */}
-        {/* Shows a preview of what the circle will look like before submitting. */}
-        <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-900">
-          <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Summary</h3>
-          <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-            <div className="text-zinc-500">Security deposit:</div>
-            <div className="font-medium text-zinc-900 dark:text-zinc-100">
-              {parseFloat(contributionAmount || '0').toFixed(2)} FLOW
-            </div>
-            <div className="text-zinc-500">Total cycles:</div>
-            <div className="font-medium text-zinc-900 dark:text-zinc-100">
-              {maxMembers} cycles
-            </div>
-            <div className="text-zinc-500">Total per member:</div>
-            <div className="font-medium text-zinc-900 dark:text-zinc-100">
-              {(parseFloat(contributionAmount || '0') * parseInt(maxMembers || '0')).toFixed(2)} FLOW
-            </div>
-            <div className="text-zinc-500">Each payout:</div>
-            <div className="font-medium text-emerald-700 dark:text-emerald-400">
-              {(parseFloat(contributionAmount || '0') * parseInt(maxMembers || '0')).toFixed(2)} FLOW
+            <div className="mt-1 flex justify-between text-[10px] text-zinc-600">
+              <span>0% — No penalty</span>
+              <span>100% — Full forfeit</span>
             </div>
           </div>
         </div>
 
-        {/* ── Submit Button ── */}
+        {/* ── Summary ── */}
+        <div className="overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-900/60">
+          <div className="border-b border-zinc-800/60 px-5 py-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Summary</h3>
+          </div>
+          <div className="divide-y divide-zinc-800/40">
+            {[
+              { label: 'Security deposit', value: `${fmtFlow(contributionAmount)} FLOW` },
+              { label: 'Total cycles', value: `${members}` },
+              { label: 'Total per member', value: `${fmtFlow(String(contribution * members))} FLOW` },
+              { label: 'Each payout', value: `${fmtFlow(String(totalPayout))} FLOW`, accent: true },
+            ].map((row) => (
+              <div key={row.label} className="flex items-center justify-between px-5 py-3">
+                <span className="text-sm text-zinc-500">{row.label}</span>
+                <span className={`text-sm font-medium ${row.accent ? 'text-emerald-400' : 'text-zinc-200'}`}>
+                  {row.value}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Submit ── */}
         <button
           type="submit"
           disabled={submitting}
-          className="w-full rounded-lg bg-emerald-600 py-3 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+          className="group relative w-full overflow-hidden rounded-2xl bg-emerald-600 py-4 text-sm font-semibold text-white shadow-lg shadow-emerald-500/20 transition-all hover:bg-emerald-500 hover:shadow-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {submitting ? (
             <span className="flex items-center justify-center gap-2">
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
               Creating Circle...
             </span>
           ) : (
-            'Create Circle & Join as Member #1'
+            <span className="flex items-center justify-center gap-2">
+              Create Circle & Join as Member #1
+              <span className="rounded-md bg-white/20 px-2 py-0.5 text-xs">
+                {fmtFlow(contributionAmount)} FLOW
+              </span>
+            </span>
           )}
         </button>
       </form>
