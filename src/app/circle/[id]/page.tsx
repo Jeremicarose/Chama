@@ -688,31 +688,33 @@ export default function CircleDetailPage() {
           </div>
         )}
 
-        {isActive && countdown === 'EXPIRED' && user.loggedIn && (
-          <button
-            onClick={handleExecuteCycle}
-            disabled={actionLoading}
-            className="group relative w-full overflow-hidden rounded-2xl bg-amber-600 py-4 text-sm font-semibold text-white shadow-lg shadow-amber-500/20 transition-all hover:bg-amber-500 hover:shadow-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <span className="relative z-10 flex items-center justify-center gap-2">
-              {actionLoading ? (
-                <>
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                  Executing cycle...
-                </>
-              ) : (
-                <>
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                  Execute Cycle — Trigger Payout
-                  <span className="rounded-md bg-white/20 px-2 py-0.5 text-xs">
-                    Deadline expired
-                  </span>
-                </>
-              )}
-            </span>
-          </button>
+        {isActive && countdown === 'EXPIRED' && (
+          <div className="flex items-center justify-center gap-2 rounded-2xl border border-amber-500/20 bg-amber-500/[0.04] py-4 text-sm font-medium text-amber-400">
+            {autoExecuting ? (
+              <>
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-amber-500/30 border-t-amber-400" />
+                Executing payout — confirming on-chain...
+              </>
+            ) : (
+              <>
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                {user.loggedIn
+                  ? 'Cycle deadline reached — triggering automatic payout...'
+                  : 'Cycle deadline reached — connect wallet to trigger payout'}
+              </>
+            )}
+          </div>
+        )}
+
+        {cycleJustExecuted && (
+          <div className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] py-4 text-sm font-medium text-emerald-400">
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+            </svg>
+            Payout sent! Cycle advanced.
+          </div>
         )}
 
         {isCompleted && (
