@@ -97,6 +97,23 @@ transaction(hostAddress: Address, circleId: UInt64) {
 }
 `;
 
+const EXECUTE_CYCLE_TX = `
+import ChamaCircle from 0xChamaCircle
+
+transaction(hostAddress: Address, circleId: UInt64) {
+    prepare(signer: auth(Storage) &Account) {
+        let host = getAccount(hostAddress)
+        let publicPath = PublicPath(identifier: "chamaCircle_".concat(circleId.toString()))
+            ?? panic("Could not construct public path")
+        let circleRef = host.capabilities
+            .borrow<&ChamaCircle.Circle>(publicPath)
+            ?? panic("Could not borrow Circle")
+
+        circleRef.executeCycle()
+    }
+}
+`;
+
 // =============================================================================
 // Types
 // =============================================================================
