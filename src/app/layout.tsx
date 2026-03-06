@@ -65,7 +65,7 @@ export default function RootLayout({
       {/* bg-zinc-50/dark:bg-zinc-950: light/dark background colors.        */}
       {/* ----------------------------------------------------------------- */}
       <body
-        className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased min-h-screen bg-zinc-50 dark:bg-zinc-950`}
+        className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased min-h-screen bg-zinc-950 text-zinc-100`}
       >
         {/* FlowProvider initializes FCL config before any child uses it.  */}
         {/* It's a Client Component boundary — children inside can use hooks. */}

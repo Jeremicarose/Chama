@@ -1,25 +1,6 @@
 // =============================================================================
 // join/page.tsx — Join an existing circle by ID
 // =============================================================================
-//
-// PURPOSE:
-//   Allows users to join a circle they don't own. The creator shares the
-//   circle ID (e.g., "Circle #3") and this page lets others search for it,
-//   see its details, and join with a single button click.
-//
-// WHY A SEPARATE PAGE (not just the Detail page Join button)?
-//   The Detail page requires knowing the URL (/circle/3). This page provides
-//   a dedicated entry point where users type an ID or paste a link. It's the
-//   "I got invited to a circle" flow.
-//
-// FLOW:
-//   1. User types a circle ID → clicks "Search"
-//   2. We query ChamaManager for the host + circle state
-//   3. Show circle info: name, contribution, members, status
-//   4. If FORMING and user not already a member → show Join button
-//   5. Join sends the JoinCircle transaction (same as Detail page)
-//   6. On success → redirect to /circle/[id]
-// =============================================================================
 
 'use client';
 
@@ -28,14 +9,14 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { fcl } from '@/lib/flow-config';
+import { useTransactionToast } from '@/components/TransactionToast';
 
 // =============================================================================
-// Cadence Scripts & Transactions
+// Cadence
 // =============================================================================
 
 const GET_CIRCLE_HOST_SCRIPT = `
 import ChamaManager from 0xChamaManager
-
 access(all) fun main(circleId: UInt64): Address? {
     return ChamaManager.getCircleHost(circleId: circleId)
 }
@@ -43,7 +24,6 @@ access(all) fun main(circleId: UInt64): Address? {
 
 const GET_CIRCLE_STATE_SCRIPT = `
 import ChamaCircle from 0xChamaCircle
-
 access(all) fun main(hostAddress: Address, circleId: UInt64): AnyStruct {
     let host = getAccount(hostAddress)
     let publicPath = PublicPath(identifier: "chamaCircle_".concat(circleId.toString()))
@@ -85,7 +65,7 @@ transaction(hostAddress: Address, circleId: UInt64) {
 `;
 
 // =============================================================================
-// Types
+// Types & Helpers
 // =============================================================================
 
 interface CirclePreview {
@@ -102,16 +82,25 @@ interface CirclePreview {
   poolBalance: string;
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  '0': 'Forming', '1': 'Active', '2': 'Completed', '3': 'Cancelled',
+const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
+  '0': { label: 'Forming', color: 'bg-sky-500/10 text-sky-400 ring-1 ring-sky-500/20' },
+  '1': { label: 'Active', color: 'bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20' },
+  '2': { label: 'Completed', color: 'bg-zinc-500/10 text-zinc-400 ring-1 ring-zinc-500/20' },
+  '3': { label: 'Cancelled', color: 'bg-red-500/10 text-red-400 ring-1 ring-red-500/20' },
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  '0': 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300',
-  '1': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300',
-  '2': 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400',
-  '3': 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300',
-};
+function fmtFlow(val: string): string {
+  const n = parseFloat(val);
+  if (isNaN(n)) return '0.00';
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function fmtDuration(seconds: string): string {
+  const s = parseFloat(seconds);
+  if (s < 60) return `${s.toFixed(0)}s`;
+  if (s < 3600) return `${(s / 60).toFixed(0)} min`;
+  return `${(s / 3600).toFixed(1)} hr`;
+}
 
 // =============================================================================
 // Component
@@ -120,23 +109,18 @@ const STATUS_COLORS: Record<string, string> = {
 export default function JoinCirclePage() {
   const router = useRouter();
   const { user } = useCurrentUser();
+  const { showToast, ToastComponent } = useTransactionToast();
 
-  // ── Search state ──
   const [circleIdInput, setCircleIdInput] = useState('');
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
 
-  // ── Found circle preview ──
   const [preview, setPreview] = useState<CirclePreview | null>(null);
   const [hostAddress, setHostAddress] = useState<string | null>(null);
 
-  // ── Join transaction state ──
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
 
-  // -------------------------------------------------------------------------
-  // Search for a circle by ID
-  // -------------------------------------------------------------------------
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     setSearchError(null);
@@ -156,23 +140,16 @@ export default function JoinCirclePage() {
         cadence: GET_CIRCLE_HOST_SCRIPT,
         args: (arg: any, t: any) => [arg(id, t.UInt64)],
       });
-
       if (!host) {
         setSearchError(`Circle #${id} not found. Check the ID and try again.`);
         setSearching(false);
         return;
       }
-
       setHostAddress(host);
-
       const state: CirclePreview = await fcl.query({
         cadence: GET_CIRCLE_STATE_SCRIPT,
-        args: (arg: any, t: any) => [
-          arg(host, t.Address),
-          arg(id, t.UInt64),
-        ],
+        args: (arg: any, t: any) => [arg(host, t.Address), arg(id, t.UInt64)],
       });
-
       setPreview(state);
     } catch (err) {
       console.error('Circle search failed:', err);
@@ -182,44 +159,34 @@ export default function JoinCirclePage() {
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Join the found circle
-  // -------------------------------------------------------------------------
   async function handleJoin() {
     if (!hostAddress || !preview) return;
     setJoining(true);
     setJoinError(null);
-
     try {
+      showToast({ status: 'pending', message: 'Approve the join transaction in your wallet...' });
       const txId = await fcl.mutate({
         cadence: JOIN_CIRCLE_TX,
-        args: (arg: any, t: any) => [
-          arg(hostAddress, t.Address),
-          arg(preview.circleId, t.UInt64),
-        ],
-        proposer: fcl.currentUser,
-        payer: fcl.currentUser,
-        authorizations: [fcl.currentUser],
-        limit: 9999,
+        args: (arg: any, t: any) => [arg(hostAddress, t.Address), arg(preview.circleId, t.UInt64)],
+        proposer: fcl.currentUser, payer: fcl.currentUser,
+        authorizations: [fcl.currentUser], limit: 9999,
       });
+      showToast({ status: 'sealing', message: 'Joining circle — confirming on-chain...', txId });
       await fcl.tx(txId).onceSealed();
-      router.push(`/circle/${preview.circleId}`);
+      showToast({ status: 'sealed', message: 'Successfully joined the circle!', txId });
+      setTimeout(() => router.push(`/circle/${preview.circleId}`), 1500);
     } catch (err: any) {
       console.error('Join failed:', err);
+      showToast({ status: 'error', message: err?.message || 'Failed to join circle.' });
       setJoinError(err?.message || 'Failed to join circle.');
     } finally {
       setJoining(false);
     }
   }
 
-  // =========================================================================
-  // Derived state
-  // =========================================================================
   const isForming = preview?.status.rawValue === '0';
   const isMember = preview?.members.some((m) => m.address === user.addr) ?? false;
-  const isFull = preview
-    ? preview.members.length >= parseInt(preview.config.maxMembers)
-    : false;
+  const isFull = preview ? preview.members.length >= parseInt(preview.config.maxMembers) : false;
   const canJoin = isForming && !isMember && !isFull && user.loggedIn;
 
   // =========================================================================
@@ -228,127 +195,146 @@ export default function JoinCirclePage() {
 
   if (!user.loggedIn) {
     return (
-      <div className="flex flex-col items-center py-20 text-center">
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
-          Join a Circle
-        </h1>
-        <p className="mt-2 text-zinc-500 dark:text-zinc-400">
-          Connect your wallet to search for and join savings circles.
-        </p>
+      <div className="flex flex-col items-center py-32 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-zinc-800/50 ring-1 ring-zinc-700/50">
+          <svg className="h-6 w-6 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+          </svg>
+        </div>
+        <h1 className="mt-4 text-xl font-semibold text-zinc-100">Join a Circle</h1>
+        <p className="mt-2 text-sm text-zinc-500">Connect your wallet to search for and join circles.</p>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-xl">
-      <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
+    <div className="mx-auto max-w-lg pb-16">
+      <ToastComponent />
+
+      <Link
+        href="/"
+        className="group inline-flex items-center gap-1.5 text-sm text-zinc-500 transition-colors hover:text-zinc-300"
+      >
+        <svg className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+        </svg>
+        Dashboard
+      </Link>
+
+      <h1 className="mt-4 text-2xl font-bold tracking-tight text-zinc-50">
         Join a Circle
       </h1>
-      <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-        Enter a circle ID shared by the creator to view its details and join.
+      <p className="mt-1.5 text-sm text-zinc-500">
+        Enter a circle ID shared by the creator to view details and join.
       </p>
 
-      {/* ── Search Form ── */}
-      <form onSubmit={handleSearch} className="mt-6 flex gap-3">
-        <input
-          type="text"
-          value={circleIdInput}
-          onChange={(e) => setCircleIdInput(e.target.value)}
-          placeholder="Circle ID (e.g., 1)"
-          className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder-zinc-600"
-          disabled={searching}
-        />
+      {/* ── Search ── */}
+      <form onSubmit={handleSearch} className="mt-8 flex gap-3">
+        <div className="relative flex-1">
+          <svg className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            type="text"
+            value={circleIdInput}
+            onChange={(e) => setCircleIdInput(e.target.value)}
+            placeholder="Circle ID (e.g., 2)"
+            className="w-full rounded-xl border border-zinc-800 bg-zinc-900/60 py-3 pl-10 pr-4 text-sm text-zinc-100 placeholder-zinc-600 outline-none transition-all focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20"
+            disabled={searching}
+          />
+        </div>
         <button
           type="submit"
           disabled={searching}
-          className="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+          className="rounded-xl bg-zinc-800 px-5 py-3 text-sm font-medium text-zinc-200 ring-1 ring-zinc-700/50 transition-all hover:bg-zinc-700 disabled:opacity-50"
         >
-          {searching ? 'Searching...' : 'Search'}
+          {searching ? (
+            <span className="flex items-center gap-2">
+              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-zinc-500 border-t-zinc-200" />
+              Searching
+            </span>
+          ) : 'Search'}
         </button>
       </form>
 
       {/* ── Search Error ── */}
       {searchError && (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+        <div className="mt-4 flex items-center gap-3 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-400">
+          <svg className="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
           {searchError}
         </div>
       )}
 
-      {/* ── Circle Preview Card ── */}
+      {/* ── Circle Preview ── */}
       {preview && (
-        <div className="mt-6 rounded-xl border border-zinc-200 p-5 dark:border-zinc-800">
-          {/* Name + Status */}
-          <div className="flex items-start justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-                {preview.config.name}
-              </h2>
-              <p className="text-sm text-zinc-500">Circle #{preview.circleId}</p>
+        <div className="mt-6 overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-900/60">
+          {/* Header */}
+          <div className="border-b border-zinc-800/60 p-5">
+            <div className="flex items-start justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-zinc-100">{preview.config.name}</h2>
+                <p className="mt-0.5 font-mono text-xs text-zinc-500">Circle #{preview.circleId}</p>
+              </div>
+              <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${STATUS_CONFIG[preview.status.rawValue]?.color || ''}`}>
+                {STATUS_CONFIG[preview.status.rawValue]?.label || 'Unknown'}
+              </span>
             </div>
-            <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_COLORS[preview.status.rawValue]}`}>
-              {STATUS_LABELS[preview.status.rawValue]}
-            </span>
           </div>
 
           {/* Stats */}
-          <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-            <div>
-              <p className="text-zinc-500">Contribution</p>
-              <p className="font-medium text-zinc-900 dark:text-zinc-100">
-                {parseFloat(preview.config.contributionAmount).toFixed(2)} FLOW
-              </p>
-            </div>
-            <div>
-              <p className="text-zinc-500">Members</p>
-              <p className="font-medium text-zinc-900 dark:text-zinc-100">
-                {preview.members.length}/{preview.config.maxMembers}
-              </p>
-            </div>
-            <div>
-              <p className="text-zinc-500">Cycle Duration</p>
-              <p className="font-medium text-zinc-900 dark:text-zinc-100">
-                {parseFloat(preview.config.cycleDuration).toFixed(0)}s
-              </p>
-            </div>
-            <div>
-              <p className="text-zinc-500">Penalty</p>
-              <p className="font-medium text-zinc-900 dark:text-zinc-100">
-                {preview.config.penaltyPercent}%
-              </p>
-            </div>
+          <div className="grid grid-cols-2 divide-x divide-zinc-800/40 border-b border-zinc-800/60">
+            {[
+              { label: 'Contribution', value: `${fmtFlow(preview.config.contributionAmount)} FLOW` },
+              { label: 'Members', value: `${preview.members.length}/${preview.config.maxMembers}` },
+              { label: 'Cycle Duration', value: fmtDuration(preview.config.cycleDuration) },
+              { label: 'Penalty', value: `${parseFloat(preview.config.penaltyPercent).toFixed(0)}%` },
+            ].map((stat, i) => (
+              <div key={stat.label} className={`px-5 py-3 ${i >= 2 ? 'border-t border-zinc-800/40' : ''}`}>
+                <p className="text-[11px] uppercase tracking-wider text-zinc-600">{stat.label}</p>
+                <p className="mt-0.5 text-sm font-medium text-zinc-200">{stat.value}</p>
+              </div>
+            ))}
           </div>
 
-          {/* Security deposit info */}
-          <div className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-            Joining requires a security deposit of{' '}
-            <span className="font-semibold">
-              {parseFloat(preview.config.contributionAmount).toFixed(2)} FLOW
-            </span>{' '}
-            (equal to one contribution). This is returned when the circle completes.
+          {/* Deposit info */}
+          <div className="flex items-center gap-3 border-b border-zinc-800/60 bg-amber-500/[0.03] px-5 py-3">
+            <svg className="h-4 w-4 flex-shrink-0 text-amber-400/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p className="text-xs text-amber-400/80">
+              Security deposit of <span className="font-semibold text-amber-300">{fmtFlow(preview.config.contributionAmount)} FLOW</span> required. Returned when circle completes.
+            </p>
           </div>
 
           {/* Join Error */}
           {joinError && (
-            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
-              {joinError}
+            <div className="border-b border-zinc-800/60 px-5 py-3">
+              <p className="text-sm text-red-400">{joinError}</p>
             </div>
           )}
 
-          {/* Action area */}
-          <div className="mt-4">
+          {/* Action */}
+          <div className="p-5">
             {canJoin && (
               <button
                 onClick={handleJoin}
                 disabled={joining}
-                className="w-full rounded-lg bg-emerald-600 py-3 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                className="group relative w-full overflow-hidden rounded-2xl bg-emerald-600 py-4 text-sm font-semibold text-white shadow-lg shadow-emerald-500/20 transition-all hover:bg-emerald-500 hover:shadow-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {joining ? (
                   <span className="flex items-center justify-center gap-2">
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
                     Joining...
                   </span>
                 ) : (
-                  `Join Circle & Pay ${parseFloat(preview.config.contributionAmount).toFixed(2)} FLOW Deposit`
+                  <span className="flex items-center justify-center gap-2">
+                    Join Circle
+                    <span className="rounded-md bg-white/20 px-2 py-0.5 text-xs">
+                      {fmtFlow(preview.config.contributionAmount)} FLOW deposit
+                    </span>
+                  </span>
                 )}
               </button>
             )}
@@ -356,21 +342,24 @@ export default function JoinCirclePage() {
             {isMember && (
               <Link
                 href={`/circle/${preview.circleId}`}
-                className="block w-full rounded-lg border border-emerald-300 py-3 text-center text-sm font-medium text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-950"
+                className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] py-4 text-sm font-medium text-emerald-400 transition-colors hover:bg-emerald-500/[0.08]"
               >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
                 You&apos;re already a member — View Circle
               </Link>
             )}
 
             {!isForming && !isMember && (
-              <p className="text-center text-sm text-zinc-500">
-                This circle is no longer accepting members ({STATUS_LABELS[preview.status.rawValue]}).
+              <p className="py-2 text-center text-sm text-zinc-500">
+                This circle is no longer accepting members ({STATUS_CONFIG[preview.status.rawValue]?.label}).
               </p>
             )}
 
             {isForming && isFull && !isMember && (
-              <p className="text-center text-sm text-zinc-500">
-                This circle is full ({preview.members.length}/{preview.config.maxMembers} members).
+              <p className="py-2 text-center text-sm text-zinc-500">
+                This circle is full ({preview.members.length}/{preview.config.maxMembers}).
               </p>
             )}
           </div>
