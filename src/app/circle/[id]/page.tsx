@@ -366,6 +366,44 @@ export default function CircleDetailPage() {
     return () => clearInterval(interval);
   }, [fetchCircle]);
 
+  // ── Auto-execute cycle when deadline expires ──
+  useEffect(() => {
+    if (!circle || !hostAddress || !user.loggedIn) return;
+    if (circle.status.rawValue !== '1') return; // only when Active
+    if (autoExecuting || actionLoading) return;
+
+    const deadline = parseFloat(circle.nextDeadline);
+    if (deadline <= 0) return;
+    const now = Date.now() / 1000;
+    if (now < deadline) return; // not expired yet
+
+    // Deadline has passed — auto-trigger executeCycle
+    setAutoExecuting(true);
+    (async () => {
+      try {
+        showToast({ status: 'pending', message: 'Cycle deadline reached — executing payout...' });
+        const txId = await fcl.mutate({
+          cadence: EXECUTE_CYCLE_TX,
+          args: (arg: any, t: any) => [arg(hostAddress, t.Address), arg(circleId, t.UInt64)],
+          proposer: fcl.currentUser, payer: fcl.currentUser,
+          authorizations: [fcl.currentUser], limit: 9999,
+        });
+        showToast({ status: 'sealing', message: 'Executing payout — confirming on-chain...', txId });
+        await fcl.tx(txId).onceSealed();
+        showToast({ status: 'sealed', message: 'Payout executed! Cycle advanced.', txId });
+        setCycleJustExecuted(true);
+        setTimeout(() => setCycleJustExecuted(false), 5000);
+        await fetchCircle();
+      } catch (err: any) {
+        // If it fails (e.g. already executed by someone else), just refresh
+        console.warn('Auto-execute cycle failed:', err?.message);
+        await fetchCircle();
+      } finally {
+        setAutoExecuting(false);
+      }
+    })();
+  }, [circle, hostAddress, user.loggedIn, autoExecuting, actionLoading]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Actions ──
   async function handleJoin() {
     if (!hostAddress) return;
