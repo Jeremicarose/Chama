@@ -453,30 +453,6 @@ export default function CircleDetailPage() {
     }
   }
 
-  async function handleExecuteCycle() {
-    if (!hostAddress) return;
-    setActionLoading(true);
-    setError(null);
-    try {
-      showToast({ status: 'pending', message: 'Approve the execute-cycle transaction...' });
-      const txId = await fcl.mutate({
-        cadence: EXECUTE_CYCLE_TX,
-        args: (arg: any, t: any) => [arg(hostAddress, t.Address), arg(circleId, t.UInt64)],
-        proposer: fcl.currentUser, payer: fcl.currentUser,
-        authorizations: [fcl.currentUser], limit: 9999,
-      });
-      showToast({ status: 'sealing', message: 'Executing cycle — confirming on-chain...', txId });
-      await fcl.tx(txId).onceSealed();
-      showToast({ status: 'sealed', message: 'Cycle executed — payout sent!', txId });
-      await fetchCircle();
-    } catch (err: any) {
-      showToast({ status: 'error', message: err?.message || 'Execute cycle failed.' });
-      setError(err?.message || 'Execute cycle failed.');
-    } finally {
-      setActionLoading(false);
-    }
-  }
-
   // =========================================================================
   // RENDER
   // =========================================================================
@@ -604,7 +580,11 @@ export default function CircleDetailPage() {
         <StatCard label="Contribution" value={`${fmtFlow(circle.config.contributionAmount)} FLOW`} />
         <StatCard label="Pool Balance" value={`${fmtFlow(circle.poolBalance)} FLOW`} accent />
         <StatCard label="Cycle" value={`${circle.currentCycle} / ${circle.config.maxMembers}`} />
-        <StatCard label="Next Payout" value={isActive ? countdown : '--'} />
+        <StatCard
+          label="Next Payout"
+          value={isActive ? (countdown === 'EXPIRED' ? 'Executing...' : countdown) : '--'}
+          accent={isActive && countdown === 'EXPIRED'}
+        />
       </div>
 
       {/* ── Recipient Banner ── */}
