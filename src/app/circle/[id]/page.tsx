@@ -328,6 +328,8 @@ export default function CircleDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [autoExecuting, setAutoExecuting] = useState(false);
+  const [cycleJustExecuted, setCycleJustExecuted] = useState(false);
 
   const countdown = useCountdown(circle ? parseFloat(circle.nextDeadline) : 0);
 
