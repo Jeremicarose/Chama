@@ -366,22 +366,23 @@ export default function CircleDetailPage() {
     return () => clearInterval(interval);
   }, [fetchCircle]);
 
-  // ── Auto-execute cycle when deadline expires ──
+  // ── Auto-execute cycle when ALL members have contributed ──
+  const allContributed = circle?.members?.length
+    ? circle.members.every((m) => m.hasContributed)
+    : false;
+  const contributedCount = circle?.members?.filter((m) => m.hasContributed).length ?? 0;
+
   useEffect(() => {
     if (!circle || !hostAddress || !user.loggedIn) return;
     if (circle.status.rawValue !== '1') return; // only when Active
     if (autoExecuting || actionLoading) return;
+    if (!allContributed) return; // wait until everyone has paid
 
-    const deadline = parseFloat(circle.nextDeadline);
-    if (deadline <= 0) return;
-    const now = Date.now() / 1000;
-    if (now < deadline) return; // not expired yet
-
-    // Deadline has passed — auto-trigger executeCycle
+    // All members contributed — auto-trigger executeCycle
     setAutoExecuting(true);
     (async () => {
       try {
-        showToast({ status: 'pending', message: 'Cycle deadline reached — executing payout...' });
+        showToast({ status: 'pending', message: 'All members contributed — executing payout...' });
         const txId = await fcl.mutate({
           cadence: EXECUTE_CYCLE_TX,
           args: (arg: any, t: any) => [arg(hostAddress, t.Address), arg(circleId, t.UInt64)],
@@ -395,16 +396,41 @@ export default function CircleDetailPage() {
         setTimeout(() => setCycleJustExecuted(false), 5000);
         await fetchCircle();
       } catch (err: any) {
-        // If it fails (e.g. already executed by someone else), just refresh
         console.warn('Auto-execute cycle failed:', err?.message);
         await fetchCircle();
       } finally {
         setAutoExecuting(false);
       }
     })();
-  }, [circle, hostAddress, user.loggedIn, autoExecuting, actionLoading]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [circle, hostAddress, user.loggedIn, autoExecuting, actionLoading, allContributed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Actions ──
+  async function handleExecuteCycle() {
+    if (!hostAddress) return;
+    setActionLoading(true);
+    setError(null);
+    try {
+      showToast({ status: 'pending', message: 'Executing cycle — approve in wallet...' });
+      const txId = await fcl.mutate({
+        cadence: EXECUTE_CYCLE_TX,
+        args: (arg: any, t: any) => [arg(hostAddress, t.Address), arg(circleId, t.UInt64)],
+        proposer: fcl.currentUser, payer: fcl.currentUser,
+        authorizations: [fcl.currentUser], limit: 9999,
+      });
+      showToast({ status: 'sealing', message: 'Executing payout — confirming on-chain...', txId });
+      await fcl.tx(txId).onceSealed();
+      showToast({ status: 'sealed', message: 'Payout executed! Cycle advanced.', txId });
+      setCycleJustExecuted(true);
+      setTimeout(() => setCycleJustExecuted(false), 5000);
+      await fetchCircle();
+    } catch (err: any) {
+      showToast({ status: 'error', message: err?.message || 'Execute cycle failed.' });
+      setError(err?.message || 'Execute cycle failed.');
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   async function handleJoin() {
     if (!hostAddress) return;
     setActionLoading(true);
@@ -659,32 +685,54 @@ export default function CircleDetailPage() {
           </button>
         )}
 
-        {isMember && hasContributed && isActive && countdown !== 'EXPIRED' && (
+        {/* Contribution progress — shown when active and not all contributed yet */}
+        {isActive && !allContributed && !autoExecuting && (
+          <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/60 p-4">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-zinc-400">Contributions this cycle</span>
+              <span className="font-medium text-zinc-200">{contributedCount} / {memberCount}</span>
+            </div>
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-500"
+                style={{ width: `${memberCount > 0 ? (contributedCount / memberCount) * 100 : 0}%` }}
+              />
+            </div>
+            {isMember && hasContributed && (
+              <p className="mt-2 flex items-center gap-1.5 text-xs text-emerald-400">
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                </svg>
+                You've contributed — waiting for others
+              </p>
+            )}
+            {countdown === 'EXPIRED' && !allContributed && user.loggedIn && (
+              <button
+                onClick={handleExecuteCycle}
+                disabled={actionLoading || autoExecuting}
+                className="mt-3 w-full rounded-xl bg-amber-600 py-2.5 text-xs font-semibold text-white transition-all hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {actionLoading ? 'Executing...' : 'Deadline passed — Execute cycle (penalizes non-payers)'}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Auto-executing banner */}
+        {isActive && autoExecuting && (
+          <div className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] py-4 text-sm font-medium text-emerald-400">
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-400" />
+            All members contributed — executing payout...
+          </div>
+        )}
+
+        {/* All contributed, waiting for auto-execute to kick in */}
+        {isActive && allContributed && !autoExecuting && !cycleJustExecuted && (
           <div className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] py-4 text-sm font-medium text-emerald-400">
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
             </svg>
-            Contributed this cycle — waiting for payout
-          </div>
-        )}
-
-        {isActive && countdown === 'EXPIRED' && (
-          <div className="flex items-center justify-center gap-2 rounded-2xl border border-amber-500/20 bg-amber-500/[0.04] py-4 text-sm font-medium text-amber-400">
-            {autoExecuting ? (
-              <>
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-amber-500/30 border-t-amber-400" />
-                Executing payout — confirming on-chain...
-              </>
-            ) : (
-              <>
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                {user.loggedIn
-                  ? 'Cycle deadline reached — triggering automatic payout...'
-                  : 'Cycle deadline reached — connect wallet to trigger payout'}
-              </>
-            )}
+            All members contributed — payout will execute automatically
           </div>
         )}
 
