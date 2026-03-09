@@ -158,7 +158,13 @@ fcl.config()
     ? '0x1654653399040a61'
     : FLOW_NETWORK === 'testnet'
       ? '0x7e60df042a9c0868'
-      : '0x0ae53cb6e3f42a79');
+      : '0x0ae53cb6e3f42a79')
+  // FlowTransactionScheduler — used by InitHandler + ScheduleNextCycle
+  .put('0xFlowTransactionScheduler', FLOW_NETWORK === 'mainnet'
+    ? '0x8c5303eaa26202d6' // TODO: confirm mainnet address
+    : FLOW_NETWORK === 'testnet'
+      ? '0x8c5303eaa26202d6'
+      : '0x8c5303eaa26202d6');
 
 // =============================================================================
 // Exports

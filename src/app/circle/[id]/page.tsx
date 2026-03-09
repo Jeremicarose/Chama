@@ -97,6 +97,100 @@ transaction(hostAddress: Address, circleId: UInt64) {
 }
 `;
 
+// Called by the HOST after the circle seals (all members joined, status = ACTIVE)
+// Creates the scheduler handler with a pre-authorized capability to the circle
+const INIT_HANDLER_TX = `
+import ChamaCircle from 0xChamaCircle
+import ChamaScheduler from 0xChamaScheduler
+import FlowTransactionScheduler from 0xFlowTransactionScheduler
+
+transaction(circleId: UInt64) {
+    prepare(signer: auth(Storage, Capabilities) &Account) {
+        let circlePath = StoragePath(identifier: "chamaCircle_".concat(circleId.toString()))
+            ?? panic("Could not create circle storage path")
+        let handlerPath = StoragePath(identifier: "chamaHandler_".concat(circleId.toString()))
+            ?? panic("Could not create handler storage path")
+        let handlerPublicPath = PublicPath(identifier: "chamaHandler_".concat(circleId.toString()))
+            ?? panic("Could not create handler public path")
+
+        if signer.storage.borrow<&AnyResource>(from: handlerPath) != nil {
+            return
+        }
+
+        let circleCap = signer.capabilities.storage
+            .issue<&ChamaCircle.Circle>(circlePath)
+        let handler <- ChamaScheduler.createHandler(
+            circleCap: circleCap,
+            storagePath: handlerPath,
+            publicPath: handlerPublicPath
+        )
+        signer.storage.save(<- handler, to: handlerPath)
+
+        let _ = signer.capabilities.storage
+            .issue<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}>(handlerPath)
+        let publicCap = signer.capabilities.storage
+            .issue<&{FlowTransactionScheduler.TransactionHandler}>(handlerPath)
+        signer.capabilities.publish(publicCap, at: handlerPublicPath)
+    }
+}
+`;
+
+// Called after InitHandler and after each cycle to schedule the next on-chain execution
+const SCHEDULE_NEXT_CYCLE_TX = `
+import FlowTransactionScheduler from 0xFlowTransactionScheduler
+import ChamaScheduler from 0xChamaScheduler
+import ChamaCircle from 0xChamaCircle
+import FlowToken from 0xFlowToken
+import FungibleToken from 0xFungibleToken
+
+transaction(circleId: UInt64, cycleDuration: UFix64) {
+    prepare(signer: auth(Storage, Capabilities) &Account) {
+        let circlePath = StoragePath(identifier: "chamaCircle_".concat(circleId.toString()))
+            ?? panic("Could not create circle storage path")
+        let handlerPath = StoragePath(identifier: "chamaHandler_".concat(circleId.toString()))
+            ?? panic("Could not create handler storage path")
+
+        let circleRef = signer.storage.borrow<&ChamaCircle.Circle>(from: circlePath)
+            ?? panic("Could not borrow circle")
+        let state = circleRef.getState()
+        if state.status != ChamaCircle.CircleStatus.ACTIVE {
+            return
+        }
+
+        let handlerCap = signer.capabilities.storage
+            .issue<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}>(handlerPath)
+        let targetTimestamp = getCurrentBlock().timestamp + cycleDuration
+        let estimate = FlowTransactionScheduler.estimate(
+            data: nil,
+            timestamp: targetTimestamp,
+            priority: FlowTransactionScheduler.Priority.Medium,
+            executionEffort: 5000
+        )
+        let feeAmount = estimate.flowFee ?? 0.001
+        let vaultRef = signer.storage
+            .borrow<auth(FungibleToken.Withdraw) &FlowToken.Vault>(from: /storage/flowTokenVault)
+            ?? panic("Could not borrow FlowToken vault for fee")
+        let fees <- vaultRef.withdraw(amount: feeAmount) as! @FlowToken.Vault
+
+        let scheduledTx <- FlowTransactionScheduler.schedule(
+            handlerCap: handlerCap,
+            data: nil,
+            timestamp: targetTimestamp,
+            priority: FlowTransactionScheduler.Priority.Medium,
+            executionEffort: 5000,
+            fees: <- fees
+        )
+
+        let scheduledTxPath = StoragePath(identifier: "chamaScheduledTx_".concat(circleId.toString()))
+            ?? panic("Could not create scheduled tx path")
+        if let oldTx <- signer.storage.load<@FlowTransactionScheduler.ScheduledTransaction>(from: scheduledTxPath) {
+            destroy oldTx
+        }
+        signer.storage.save(<- scheduledTx, to: scheduledTxPath)
+    }
+}
+`;
+
 const EXECUTE_CYCLE_TX = `
 import ChamaCircle from 0xChamaCircle
 
@@ -447,11 +541,52 @@ export default function CircleDetailPage() {
       await fcl.tx(txId).onceSealed();
       showToast({ status: 'sealed', message: 'Successfully joined the circle!', txId });
       await fetchCircle();
+
+      // If this join sealed the circle and user is the host, init the on-chain scheduler
+      // Re-fetch to get latest state after join
+      const freshState: CircleData = await fcl.query({
+        cadence: GET_CIRCLE_STATE_SCRIPT,
+        args: (arg: any, t: any) => [arg(hostAddress, t.Address), arg(circleId, t.UInt64)],
+      });
+      if (freshState.status.rawValue === '1' && user.addr === hostAddress) {
+        await initScheduler(freshState);
+      }
     } catch (err: any) {
       showToast({ status: 'error', message: err?.message || 'Join failed.' });
       setError(err?.message || 'Join failed.');
     } finally {
       setActionLoading(false);
+    }
+  }
+
+  async function initScheduler(state: CircleData) {
+    try {
+      showToast({ status: 'pending', message: 'Setting up automatic payouts...' });
+      // Step 1: Init handler
+      const initTxId = await fcl.mutate({
+        cadence: INIT_HANDLER_TX,
+        args: (arg: any, t: any) => [arg(circleId, t.UInt64)],
+        proposer: fcl.currentUser, payer: fcl.currentUser,
+        authorizations: [fcl.currentUser], limit: 9999,
+      });
+      await fcl.tx(initTxId).onceSealed();
+
+      // Step 2: Schedule next cycle
+      const cycleDuration = state.config.cycleDuration;
+      const scheduleTxId = await fcl.mutate({
+        cadence: SCHEDULE_NEXT_CYCLE_TX,
+        args: (arg: any, t: any) => [
+          arg(circleId, t.UInt64),
+          arg(cycleDuration, t.UFix64),
+        ],
+        proposer: fcl.currentUser, payer: fcl.currentUser,
+        authorizations: [fcl.currentUser], limit: 9999,
+      });
+      await fcl.tx(scheduleTxId).onceSealed();
+      showToast({ status: 'sealed', message: 'Automatic payouts scheduled!', txId: scheduleTxId });
+    } catch (err: any) {
+      // Non-fatal — frontend auto-execute is the fallback
+      console.warn('Scheduler init failed (fallback to frontend auto-execute):', err?.message);
     }
   }
 
