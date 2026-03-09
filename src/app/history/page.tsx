@@ -516,7 +516,7 @@ export default function HistoryPage() {
                         {/*   Object.entries makes this renderer action-agnostic —    */}
                         {/*   it'll display any data the receipt contains.            */}
                         {entry.receipt.details && Object.keys(entry.receipt.details).length > 0 && (
-                          <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 rounded-xl bg-zinc-800/30 px-3 py-2.5 text-xs sm:grid-cols-3">
+                          <div className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1.5 rounded-xl bg-zinc-800/30 px-3 py-2.5 text-xs sm:grid-cols-2 md:grid-cols-3">
                             {Object.entries(entry.receipt.details).map(([key, value]) => (
                               <div key={key}>
                                 <span className="text-zinc-600">{key}: </span>

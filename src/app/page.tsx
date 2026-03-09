@@ -248,7 +248,7 @@ export default function Dashboard() {
               : 'Your savings circles will appear here'}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
           <Link
             href="/join"
             className="rounded-xl border border-zinc-700/80 bg-zinc-900/60 px-4 py-2.5 text-sm font-medium text-zinc-300 transition-all hover:border-zinc-600 hover:bg-zinc-800/80"

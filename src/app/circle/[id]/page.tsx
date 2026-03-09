@@ -620,7 +620,7 @@ export default function CircleDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-32">
+      <div className="flex flex-col items-center justify-center py-16 sm:py-32">
         <div className="relative h-10 w-10">
           <div className="absolute inset-0 animate-spin rounded-full border-2 border-zinc-800 border-t-emerald-500" />
         </div>
@@ -847,7 +847,7 @@ export default function CircleDetailPage() {
                 disabled={actionLoading || autoExecuting}
                 className="mt-3 w-full rounded-xl bg-amber-600 py-2.5 text-xs font-semibold text-white transition-all hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {actionLoading ? 'Executing...' : 'Deadline passed — Execute cycle (penalizes non-payers)'}
+                {actionLoading ? 'Executing...' : 'Execute cycle — deadline passed'}
               </button>
             )}
           </div>

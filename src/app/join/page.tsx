@@ -284,7 +284,7 @@ export default function JoinCirclePage() {
           </div>
 
           {/* Stats */}
-          <div className="grid grid-cols-2 divide-x divide-zinc-800/40 border-b border-zinc-800/60">
+          <div className="grid grid-cols-2 divide-x divide-zinc-800/40 border-b border-zinc-800/60 sm:grid-cols-2">
             {[
               { label: 'Contribution', value: `${fmtFlow(preview.config.contributionAmount)} FLOW` },
               { label: 'Members', value: `${preview.members.length}/${preview.config.maxMembers}` },
