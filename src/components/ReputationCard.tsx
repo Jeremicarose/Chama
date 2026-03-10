@@ -64,6 +64,9 @@ function ScoreRing({ score, size = 80, strokeWidth = 6 }: { score: number; size?
           ? '#fb923c' // orange-400
           : '#f87171'; // red-400
 
+  // For small sizes (badges), use compact text. For full-size, show score + label.
+  const isCompact = size <= 40;
+
   return (
     <div className="relative" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90">
@@ -90,10 +93,16 @@ function ScoreRing({ score, size = 80, strokeWidth = 6 }: { score: number; size?
           className="transition-all duration-1000 ease-out"
         />
       </svg>
-      {/* Score number in the center */}
+      {/* Score number in the center — adapts text size to ring size */}
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className={`text-lg font-bold ${grade.color}`}>{score}</span>
-        <span className="text-[9px] uppercase tracking-wider text-zinc-500">score</span>
+        {isCompact ? (
+          <span className={`text-[9px] font-bold leading-none ${grade.color}`}>{score}</span>
+        ) : (
+          <>
+            <span className={`text-lg font-bold ${grade.color}`}>{score}</span>
+            <span className="text-[9px] uppercase tracking-wider text-zinc-500">score</span>
+          </>
+        )}
       </div>
     </div>
   );
