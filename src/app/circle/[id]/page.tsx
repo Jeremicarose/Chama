@@ -921,6 +921,11 @@ export default function CircleDetailPage() {
         </div>
       </div>
 
+      {/* ── Activity Feed ── */}
+      <div className="mt-8">
+        <ActivityFeed latestReceiptCID={circle.latestReceiptCID} />
+      </div>
+
       {/* ── Configuration ── */}
       <div className="mt-8">
         <h2 className="text-base font-semibold text-zinc-100">Configuration</h2>
