@@ -13,6 +13,7 @@ import { useTransactionToast } from '@/components/TransactionToast';
 import { ReputationBadge } from '@/components/ReputationCard';
 import { ActivityFeed } from '@/components/ActivityFeed';
 import { PotGrowth } from '@/components/PotGrowth';
+import { recordReceiptClient } from '@/lib/receipt-client';
 
 // =============================================================================
 // Cadence Scripts
