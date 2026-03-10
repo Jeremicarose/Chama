@@ -611,6 +611,22 @@ export default function CircleDetailPage() {
       await fcl.tx(txId).onceSealed();
       showToast({ status: 'sealed', message: 'Contribution confirmed!', txId });
       await fetchCircle();
+
+      // Fire-and-forget: record receipt to IPFS + on-chain
+      if (hostAddress && user.addr && circle) {
+        recordReceiptClient({
+          circleId,
+          action: 'contribution',
+          actor: user.addr,
+          timestamp: new Date().toISOString(),
+          details: {
+            amount: circle.config.contributionAmount,
+            cycle: parseInt(circle.currentCycle),
+          },
+          transactionId: txId,
+          previousReceiptCID: circle.latestReceiptCID || null,
+        }, hostAddress, circleId, circle.latestReceiptCID || null).catch(console.warn);
+      }
     } catch (err: any) {
       showToast({ status: 'error', message: err?.message || 'Contribution failed.' });
       setError(err?.message || 'Contribution failed.');
