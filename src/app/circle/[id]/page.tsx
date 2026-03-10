@@ -11,6 +11,7 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { fcl } from '@/lib/flow-config';
 import { useTransactionToast } from '@/components/TransactionToast';
 import { ReputationBadge } from '@/components/ReputationCard';
+import { ActivityFeed } from '@/components/ActivityFeed';
 
 // =============================================================================
 // Cadence Scripts
