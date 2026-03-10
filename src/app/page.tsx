@@ -8,6 +8,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { fcl } from '@/lib/flow-config';
+import { ReputationCard } from '@/components/ReputationCard';
 
 // =============================================================================
 // Cadence Scripts
@@ -263,6 +264,16 @@ export default function Dashboard() {
           </Link>
         </div>
       </div>
+
+      {/* ── Reputation Card ── */}
+      {/* Shows the user's Trust Score computed from their on-chain history.  */}
+      {/* Positioned prominently because reputation is the "identity layer"  */}
+      {/* that makes Chama more than just a savings tool.                    */}
+      {user.addr && (
+        <div className="mt-6">
+          <ReputationCard address={user.addr} />
+        </div>
+      )}
 
       {/* ── Loading ── */}
       {loading && (

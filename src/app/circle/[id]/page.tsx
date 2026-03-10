@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { fcl } from '@/lib/flow-config';
 import { useTransactionToast } from '@/components/TransactionToast';
+import { ReputationBadge } from '@/components/ReputationCard';
 
 // =============================================================================
 // Cadence Scripts
@@ -372,6 +373,7 @@ function MemberRow({
         </div>
       </div>
       <div className="flex items-center gap-2">
+        <ReputationBadge address={member.address} />
         {isActive && (
           member.hasContributed ? (
             <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-400 ring-1 ring-emerald-500/20">
