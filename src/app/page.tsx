@@ -276,6 +276,14 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* ── Cash Flow Timeline — upcoming payouts and contributions ── */}
+      {/* Only rendered when circles are loaded, shows cross-circle financial view */}
+      {!loading && circles.length > 0 && user.addr && (
+        <div className="mt-6">
+          <CashFlowTimeline circles={circles} userAddr={user.addr} />
+        </div>
+      )}
+
       {/* ── Loading ── */}
       {loading && (
         <div className="mt-16 flex flex-col items-center">
