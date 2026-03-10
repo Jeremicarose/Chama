@@ -521,6 +521,24 @@ export default function CircleDetailPage() {
       showToast({ status: 'sealed', message: 'Payout executed! Cycle advanced.', txId });
       setCycleJustExecuted(true);
       setTimeout(() => setCycleJustExecuted(false), 5000);
+
+      // Fire-and-forget: record payout receipt to IPFS + on-chain
+      if (hostAddress && user.addr && circle) {
+        recordReceiptClient({
+          circleId,
+          action: 'payout_executed',
+          actor: user.addr,
+          timestamp: new Date().toISOString(),
+          details: {
+            cycle: parseInt(circle.currentCycle),
+            recipient: circle.nextRecipient || 'unknown',
+            amount: String(parseFloat(circle.config.contributionAmount) * parseInt(circle.config.maxMembers)),
+          },
+          transactionId: txId,
+          previousReceiptCID: circle.latestReceiptCID || null,
+        }, hostAddress, circleId, circle.latestReceiptCID || null).catch(console.warn);
+      }
+
       await fetchCircle();
     } catch (err: any) {
       showToast({ status: 'error', message: err?.message || 'Execute cycle failed.' });
@@ -546,6 +564,21 @@ export default function CircleDetailPage() {
       await fcl.tx(txId).onceSealed();
       showToast({ status: 'sealed', message: 'Successfully joined the circle!', txId });
       await fetchCircle();
+
+      // Fire-and-forget: record join receipt to IPFS + on-chain
+      if (hostAddress && user.addr && circle) {
+        recordReceiptClient({
+          circleId,
+          action: 'member_joined',
+          actor: user.addr,
+          timestamp: new Date().toISOString(),
+          details: {
+            depositAmount: circle.config.contributionAmount,
+          },
+          transactionId: txId,
+          previousReceiptCID: circle.latestReceiptCID || null,
+        }, hostAddress, circleId, circle.latestReceiptCID || null).catch(console.warn);
+      }
 
       // If this join sealed the circle and user is the host, init the on-chain scheduler
       // Re-fetch to get latest state after join
