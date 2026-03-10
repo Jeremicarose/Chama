@@ -752,6 +752,18 @@ export default function CircleDetailPage() {
         />
       </div>
 
+      {/* ── Pot Growth Visualization — animated pool balance ── */}
+      {isActive && (
+        <div className="mt-6 flex justify-center rounded-2xl border border-zinc-800/80 bg-zinc-900/60 py-6 backdrop-blur-sm">
+          <PotGrowth
+            poolBalance={parseFloat(circle.poolBalance)}
+            targetAmount={parseFloat(payoutAmount)}
+            memberCount={memberCount}
+            contributedCount={contributedCount}
+          />
+        </div>
+      )}
+
       {/* ── Recipient Banner ── */}
       {isActive && circle.nextRecipient && (
         <div className="mt-4 flex items-center gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] px-5 py-4">
