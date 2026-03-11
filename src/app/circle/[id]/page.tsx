@@ -493,6 +493,25 @@ export default function CircleDetailPage() {
         showToast({ status: 'sealed', message: 'Payout executed! Cycle advanced.', txId });
         setCycleJustExecuted(true);
         setTimeout(() => setCycleJustExecuted(false), 5000);
+
+        // Fire-and-forget: record payout receipt
+        if (hostAddress && user.addr && circle) {
+          recordReceiptClient({
+            circleId,
+            action: 'payout_executed',
+            actor: user.addr,
+            timestamp: new Date().toISOString(),
+            details: {
+              cycle: parseInt(circle.currentCycle),
+              recipient: circle.nextRecipient || 'unknown',
+              amount: String(parseFloat(circle.config.contributionAmount) * parseInt(circle.config.maxMembers)),
+              autoExecuted: true,
+            },
+            transactionId: txId,
+            previousReceiptCID: circle.latestReceiptCID || null,
+          }, hostAddress, circleId, circle.latestReceiptCID || null).catch(console.warn);
+        }
+
         await fetchCircle();
       } catch (err: any) {
         console.warn('Auto-execute cycle failed:', err?.message);
