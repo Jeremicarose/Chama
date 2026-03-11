@@ -302,6 +302,13 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* ── Achievements Banner — gamification strip ── */}
+      {achievements.length > 0 && (
+        <div className="mt-4">
+          <AchievementBanner achievements={achievements} />
+        </div>
+      )}
+
       {/* ── Cash Flow Timeline — upcoming payouts and contributions ── */}
       {/* Only rendered when circles are loaded, shows cross-circle financial view */}
       {!loading && circles.length > 0 && user.addr && (
