@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { fcl } from '@/lib/flow-config';
 import { useTransactionToast } from '@/components/TransactionToast';
+import { recordReceiptClient } from '@/lib/receipt-client';
 
 // =============================================================================
 // Cadence Transaction
@@ -156,6 +157,25 @@ export default function CreateCirclePage() {
         (e: any) => e.type.includes('ChamaCircle.CircleCreated')
       );
       showToast({ status: 'sealed', message: 'Circle created successfully!', txId });
+
+      // Fire-and-forget: record circle_created receipt to IPFS + on-chain
+      if (createdEvent && user.addr) {
+        const newCircleId = String(createdEvent.data.circleId);
+        recordReceiptClient({
+          circleId: newCircleId,
+          action: 'circle_created',
+          actor: user.addr,
+          timestamp: new Date().toISOString(),
+          details: {
+            name,
+            contributionAmount: parseFloat(contributionAmount).toFixed(2),
+            maxMembers: parseInt(maxMembers),
+            cycleDuration: parseFloat(cycleDuration),
+            penaltyPercent: parseFloat(penaltyPercent),
+          },
+          transactionId: txId,
+        }, user.addr, newCircleId, null).catch(console.warn);
+      }
 
       if (createdEvent) {
         setTimeout(() => router.push(`/circle/${createdEvent.data.circleId}`), 1500);
