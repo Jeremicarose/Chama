@@ -10,6 +10,14 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { fcl } from '@/lib/flow-config';
 import { ReputationCard } from '@/components/ReputationCard';
 import { CashFlowTimeline } from '@/components/CashFlowTimeline';
+import { AchievementBanner } from '@/components/AchievementBanner';
+import { computeReputation } from '@/lib/reputation';
+import {
+  checkAchievements,
+  getNewUnlocks,
+  markAchievementsSeen,
+  type AchievementStatus,
+} from '@/lib/achievements';
 
 // =============================================================================
 // Cadence Scripts
