@@ -14,6 +14,9 @@ import { ReputationBadge } from '@/components/ReputationCard';
 import { ActivityFeed } from '@/components/ActivityFeed';
 import { PotGrowth } from '@/components/PotGrowth';
 import { recordReceiptClient } from '@/lib/receipt-client';
+import { computeReputation } from '@/lib/reputation';
+import { checkAchievements, type AchievementStatus } from '@/lib/achievements';
+import { MiniBadge } from '@/components/AchievementBadge';
 
 // =============================================================================
 // Cadence Scripts
