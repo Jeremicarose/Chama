@@ -349,6 +349,17 @@ function MemberRow({
   isYou: boolean;
   isActive: boolean;
 }) {
+  // Compute achievements for this member (uses cached reputation data)
+  const [badges, setBadges] = useState<AchievementStatus[]>([]);
+  useEffect(() => {
+    computeReputation(member.address)
+      .then((score) => {
+        const unlocked = checkAchievements(score).filter((a) => a.unlocked);
+        setBadges(unlocked.slice(0, 3)); // Show top 3 badges
+      })
+      .catch(() => {});
+  }, [member.address]);
+
   return (
     <div className={`flex items-center justify-between px-4 py-3 transition-colors ${isYou ? 'bg-emerald-500/[0.03]' : ''}`}>
       <div className="flex items-center gap-3">
@@ -365,6 +376,14 @@ function MemberRow({
             {isYou && (
               <span className="rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
                 You
+              </span>
+            )}
+            {/* Mini achievement badges — top 3 unlocked */}
+            {badges.length > 0 && (
+              <span className="flex items-center gap-0.5">
+                {badges.map((b) => (
+                  <MiniBadge key={b.id} achievement={b} />
+                ))}
               </span>
             )}
           </p>
