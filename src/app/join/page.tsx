@@ -258,6 +258,21 @@ export default function MarketplacePage() {
       showToast({ status: 'sealing', message: 'Joining — confirming on-chain...', txId });
       await fcl.tx(txId).onceSealed();
       showToast({ status: 'sealed', message: 'Joined successfully!', txId });
+
+      // Fire-and-forget: record join receipt to IPFS + on-chain
+      if (user.addr) {
+        recordReceiptClient({
+          circleId: circle.circleId,
+          action: 'member_joined',
+          actor: user.addr,
+          timestamp: new Date().toISOString(),
+          details: {
+            depositAmount: circle.config.contributionAmount,
+          },
+          transactionId: txId,
+        }, circle.hostAddress, circle.circleId, null).catch(console.warn);
+      }
+
       setTimeout(() => router.push(`/circle/${circle.circleId}`), 1500);
     } catch (err: any) {
       showToast({ status: 'error', message: err?.message || 'Join failed.' });
