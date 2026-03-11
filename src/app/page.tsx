@@ -142,6 +142,7 @@ export default function Dashboard() {
   const [circles, setCircles] = useState<CircleStateData[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [achievements, setAchievements] = useState<AchievementStatus[]>([]);
 
   const fetchCircles = useCallback(async () => {
     if (!user.addr) return;
