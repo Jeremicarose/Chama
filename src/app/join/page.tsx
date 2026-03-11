@@ -32,6 +32,7 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { fcl } from '@/lib/flow-config';
 import { useTransactionToast } from '@/components/TransactionToast';
 import { ReputationBadge } from '@/components/ReputationCard';
+import { recordReceiptClient } from '@/lib/receipt-client';
 
 // =============================================================================
 // Cadence Scripts & Transactions
