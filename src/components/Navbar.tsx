@@ -19,6 +19,7 @@ const NAV_LINKS = [
   { label: 'Create', href: '/create' },
   { label: 'Join', href: '/join' },
   { label: 'History', href: '/history' },
+  { label: 'Badges', href: '/achievements' },
 ];
 
 export default function Navbar() {
