@@ -189,6 +189,23 @@ export default function Dashboard() {
     }
   }, [user.loggedIn, user.addr, fetchCircles]);
 
+  // ── Achievement computation + unlock detection ──
+  useEffect(() => {
+    if (!user.addr) return;
+    computeReputation(user.addr)
+      .then((score) => {
+        const statuses = checkAchievements(score);
+        setAchievements(statuses);
+
+        // Check for new unlocks and notify
+        const fresh = getNewUnlocks(statuses);
+        if (fresh.length > 0) {
+          markAchievementsSeen(fresh.map((a) => a.id));
+        }
+      })
+      .catch(() => {});
+  }, [user.addr]);
+
   // =========================================================================
   // RENDER: Not connected — Hero/Landing
   // =========================================================================
