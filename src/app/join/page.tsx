@@ -33,6 +33,7 @@ import { fcl } from '@/lib/flow-config';
 import { useTransactionToast } from '@/components/TransactionToast';
 import { ReputationBadge } from '@/components/ReputationCard';
 import { recordReceiptClient } from '@/lib/receipt-client';
+import { fmtFlow, useFlowPrice } from '@/lib/currency';
 
 // =============================================================================
 // Cadence Scripts & Transactions
@@ -132,12 +133,6 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   '3': { label: 'Cancelled', color: 'bg-red-500/10 text-red-400 ring-1 ring-red-500/20' },
 };
 
-function fmtFlow(val: string): string {
-  const n = parseFloat(val);
-  if (isNaN(n)) return '0.00';
-  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 function fmtDuration(seconds: string): string {
   const s = parseFloat(seconds);
   if (s < 60) return `${s.toFixed(0)}s`;
@@ -159,6 +154,8 @@ export default function MarketplacePage() {
   const router = useRouter();
   const { user } = useCurrentUser();
   const { showToast, ToastComponent } = useTransactionToast();
+
+  const { formatFiat } = useFlowPrice();
 
   // ── Search by ID state ──
   const [circleIdInput, setCircleIdInput] = useState('');
@@ -270,7 +267,7 @@ export default function MarketplacePage() {
             depositAmount: circle.config.contributionAmount,
           },
           transactionId: txId,
-        }, circle.hostAddress, circle.circleId, null).catch(console.warn);
+        }).catch(console.warn);
       }
 
       setTimeout(() => router.push(`/circle/${circle.circleId}`), 1500);
@@ -459,11 +456,13 @@ export default function MarketplacePage() {
                 <div className="grid grid-cols-3 border-t border-zinc-800/60 divide-x divide-zinc-800/60">
                   <div className="px-4 py-2.5">
                     <p className="text-[10px] uppercase tracking-wider text-zinc-600">Contribution</p>
-                    <p className="mt-0.5 text-sm font-medium text-zinc-200">{fmtFlow(circle.config.contributionAmount)}</p>
+                    <p className="mt-0.5 text-sm font-medium text-zinc-200">{fmtFlow(circle.config.contributionAmount)} FLOW</p>
+                    <p className="text-[10px] text-zinc-600">{formatFiat(parseFloat(circle.config.contributionAmount))}</p>
                   </div>
                   <div className="px-4 py-2.5">
                     <p className="text-[10px] uppercase tracking-wider text-zinc-600">Payout</p>
-                    <p className="mt-0.5 text-sm font-medium text-emerald-400">{fmtFlow(payout)}</p>
+                    <p className="mt-0.5 text-sm font-medium text-emerald-400">{fmtFlow(payout)} FLOW</p>
+                    <p className="text-[10px] text-zinc-600">{formatFiat(parseFloat(payout))}</p>
                   </div>
                   <div className="px-4 py-2.5">
                     <p className="text-[10px] uppercase tracking-wider text-zinc-600">Duration</p>

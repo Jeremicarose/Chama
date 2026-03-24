@@ -11,6 +11,7 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { fcl } from '@/lib/flow-config';
 import { useTransactionToast } from '@/components/TransactionToast';
 import { recordReceiptClient } from '@/lib/receipt-client';
+import { fmtFlow, useFlowPrice } from '@/lib/currency';
 
 // =============================================================================
 // Cadence Transaction
@@ -69,16 +70,6 @@ transaction(
 `;
 
 // =============================================================================
-// Helpers
-// =============================================================================
-
-function fmtFlow(val: string): string {
-  const n = parseFloat(val || '0');
-  if (isNaN(n)) return '0.00';
-  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-// =============================================================================
 // Input styling constants
 // =============================================================================
 
@@ -105,6 +96,7 @@ export default function CreateCirclePage() {
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { formatFiat } = useFlowPrice();
 
   // ── Derived values for summary ──
   const contribution = parseFloat(contributionAmount || '0');
@@ -174,7 +166,7 @@ export default function CreateCirclePage() {
             penaltyPercent: parseFloat(penaltyPercent),
           },
           transactionId: txId,
-        }, user.addr, newCircleId, null).catch(console.warn);
+        }).catch(console.warn);
       }
 
       if (createdEvent) {
@@ -344,18 +336,33 @@ export default function CreateCirclePage() {
           </div>
           <div className="divide-y divide-zinc-800/40">
             {[
-              { label: 'Security deposit', value: `${fmtFlow(contributionAmount)} FLOW` },
-              { label: 'Total cycles', value: `${members}` },
-              { label: 'Total per member', value: `${fmtFlow(String(contribution * members))} FLOW` },
-              { label: 'Each payout', value: `${fmtFlow(String(totalPayout))} FLOW`, accent: true },
+              { label: 'You pay now (deposit)', value: `${fmtFlow(contributionAmount)} FLOW`, hint: formatFiat(contribution) || 'Returned when circle completes' },
+              { label: 'You pay each cycle', value: `${fmtFlow(contributionAmount)} FLOW`, hint: formatFiat(contribution) },
+              { label: 'Number of cycles', value: `${members}`, hint: 'One cycle per member' },
+              { label: 'Your total cost', value: `${fmtFlow(String(contribution * members))} FLOW`, hint: formatFiat(contribution * members) || `${members} cycles × ${fmtFlow(contributionAmount)} FLOW` },
+              { label: 'Each payout (pot)', value: `${fmtFlow(String(totalPayout))} FLOW`, accent: true, hint: formatFiat(totalPayout) || `${members} members × ${fmtFlow(contributionAmount)} FLOW` },
             ].map((row) => (
-              <div key={row.label} className="flex items-center justify-between px-5 py-3">
-                <span className="text-sm text-zinc-500">{row.label}</span>
-                <span className={`text-sm font-medium ${row.accent ? 'text-emerald-400' : 'text-zinc-200'}`}>
-                  {row.value}
-                </span>
+              <div key={row.label} className="flex flex-col px-5 py-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-zinc-500">{row.label}</span>
+                  <span className={`text-sm font-medium ${row.accent ? 'text-emerald-400' : 'text-zinc-200'}`}>
+                    {row.value}
+                  </span>
+                </div>
+                {row.hint && (
+                  <span className="mt-0.5 text-[11px] text-zinc-600">{row.hint}</span>
+                )}
               </div>
             ))}
+          </div>
+
+          {/* How it works callout */}
+          <div className="border-t border-zinc-800/60 px-5 py-3">
+            <p className="text-xs leading-relaxed text-zinc-600">
+              Each cycle, all {members} members contribute {fmtFlow(contributionAmount)} FLOW.
+              The full pot ({fmtFlow(String(totalPayout))} FLOW) goes to one member on rotation.
+              After {members} cycles, everyone has received exactly one payout.
+            </p>
           </div>
         </div>
 

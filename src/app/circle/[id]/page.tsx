@@ -17,6 +17,7 @@ import { recordReceiptClient } from '@/lib/receipt-client';
 import { computeReputation } from '@/lib/reputation';
 import { checkAchievements, type AchievementStatus } from '@/lib/achievements';
 import { MiniBadge } from '@/components/AchievementBadge';
+import { fmtFlow, useFlowPrice } from '@/lib/currency';
 
 // =============================================================================
 // Cadence Scripts
@@ -278,11 +279,7 @@ function truncAddr(addr: string): string {
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 }
 
-function fmtFlow(val: string): string {
-  const n = parseFloat(val);
-  if (isNaN(n)) return '0.00';
-  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+// fmtFlow imported from @/lib/currency
 
 function fmtPercent(val: string): string {
   return `${parseFloat(val).toFixed(0)}%`;
@@ -324,7 +321,7 @@ function useCountdown(deadlineTimestamp: number): string {
 // Sub-components
 // =============================================================================
 
-function StatCard({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+function StatCard({ label, value, accent, hint }: { label: string; value: string; accent?: boolean; hint?: string }) {
   return (
     <div className="group relative overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-900/60 p-4 backdrop-blur-sm transition-all duration-300 hover:border-zinc-700/80 hover:bg-zinc-900/80">
       <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent" />
@@ -334,6 +331,9 @@ function StatCard({ label, value, accent }: { label: string; value: string; acce
       <p className={`relative mt-2 text-xl font-semibold tracking-tight ${accent ? 'text-emerald-400' : 'text-zinc-100'}`}>
         {value}
       </p>
+      {hint && (
+        <p className="relative mt-1 text-[10px] text-zinc-600">{hint}</p>
+      )}
     </div>
   );
 }
@@ -451,6 +451,7 @@ export default function CircleDetailPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [autoExecuting, setAutoExecuting] = useState(false);
   const [cycleJustExecuted, setCycleJustExecuted] = useState(false);
+  const { formatFiat } = useFlowPrice();
 
   const countdown = useCountdown(circle ? parseFloat(circle.nextDeadline) : 0);
 
@@ -531,7 +532,7 @@ export default function CircleDetailPage() {
             },
             transactionId: txId,
             previousReceiptCID: circle.latestReceiptCID || null,
-          }, hostAddress, circleId, circle.latestReceiptCID || null).catch(console.warn);
+          }).catch(console.warn);
         }
 
         await fetchCircle();
@@ -577,7 +578,7 @@ export default function CircleDetailPage() {
           },
           transactionId: txId,
           previousReceiptCID: circle.latestReceiptCID || null,
-        }, hostAddress, circleId, circle.latestReceiptCID || null).catch(console.warn);
+        }).catch(console.warn);
       }
 
       await fetchCircle();
@@ -618,7 +619,7 @@ export default function CircleDetailPage() {
           },
           transactionId: txId,
           previousReceiptCID: circle.latestReceiptCID || null,
-        }, hostAddress, circleId, circle.latestReceiptCID || null).catch(console.warn);
+        }).catch(console.warn);
       }
 
       // If this join sealed the circle and user is the host, init the on-chain scheduler
@@ -699,7 +700,7 @@ export default function CircleDetailPage() {
           },
           transactionId: txId,
           previousReceiptCID: circle.latestReceiptCID || null,
-        }, hostAddress, circleId, circle.latestReceiptCID || null).catch(console.warn);
+        }).catch(console.warn);
       }
     } catch (err: any) {
       showToast({ status: 'error', message: err?.message || 'Contribution failed.' });
@@ -833,8 +834,8 @@ export default function CircleDetailPage() {
 
       {/* ── Stats Grid ── */}
       <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="Contribution" value={`${fmtFlow(circle.config.contributionAmount)} FLOW`} />
-        <StatCard label="Pool Balance" value={`${fmtFlow(circle.poolBalance)} FLOW`} accent />
+        <StatCard label="Contribution" value={`${fmtFlow(circle.config.contributionAmount)} FLOW`} hint={formatFiat(parseFloat(circle.config.contributionAmount))} />
+        <StatCard label="Pool Balance" value={`${fmtFlow(circle.poolBalance)} FLOW`} accent hint={formatFiat(parseFloat(circle.poolBalance))} />
         <StatCard label="Cycle" value={`${circle.currentCycle} / ${circle.config.maxMembers}`} />
         <StatCard
           label="Next Payout"
@@ -1027,7 +1028,7 @@ export default function CircleDetailPage() {
 
       {/* ── Activity Feed ── */}
       <div className="mt-8">
-        <ActivityFeed latestReceiptCID={circle.latestReceiptCID} />
+        <ActivityFeed circleId={circleId} />
       </div>
 
       {/* ── Configuration ── */}
@@ -1037,14 +1038,17 @@ export default function CircleDetailPage() {
           {[
             { label: 'Penalty per miss', value: fmtPercent(circle.config.penaltyPercent) },
             { label: 'Cycle duration', value: fmtDuration(circle.config.cycleDuration) },
-            { label: 'Each payout', value: `${fmtFlow(payoutAmount)} FLOW`, accent: true },
+            { label: 'Each payout', value: `${fmtFlow(payoutAmount)} FLOW`, accent: true, hint: formatFiat(parseFloat(payoutAmount)) },
             { label: 'Max members', value: circle.config.maxMembers },
           ].map((row, i) => (
             <div key={row.label} className={`flex items-center justify-between px-4 py-3 ${i > 0 ? 'border-t border-zinc-800/60' : ''}`}>
               <span className="text-sm text-zinc-500">{row.label}</span>
-              <span className={`text-sm font-medium ${row.accent ? 'text-emerald-400' : 'text-zinc-200'}`}>
-                {row.value}
-              </span>
+              <div className="text-right">
+                <span className={`text-sm font-medium ${row.accent ? 'text-emerald-400' : 'text-zinc-200'}`}>
+                  {row.value}
+                </span>
+                {row.hint && <p className="mt-0.5 text-[10px] text-zinc-600">{row.hint}</p>}
+              </div>
             </div>
           ))}
           {circle.latestReceiptCID && (
