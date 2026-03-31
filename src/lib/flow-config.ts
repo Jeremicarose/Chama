@@ -50,6 +50,17 @@ const ACCESS_NODE_MAP: Record<string, string> = {
 // pre-funded accounts. On testnet/mainnet, Discovery shows Lilico, Blocto, etc.
 // =============================================================================
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Wallet Discovery
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Uses FCL Discovery to show available wallets. On testnet this includes
+// Blocto (email signup), Flow Wallet, Dapper, etc. The discovery.authn.include
+// config below prioritizes Blocto for walletless onboarding.
+//
+// NOTE: If Blocto's servers are temporarily down (525/526 SSL errors),
+// users can still authenticate via other wallets in the Discovery list.
+// ─────────────────────────────────────────────────────────────────────────────
 const DISCOVERY_MAP: Record<string, string> = {
   emulator: 'http://localhost:8701/fcl/authn',
   testnet: 'https://fcl-discovery.onflow.org/testnet/authn',
