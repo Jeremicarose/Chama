@@ -15,6 +15,7 @@ import { ReputationBadge } from '@/components/ReputationCard';
 import { ActivityFeed } from '@/components/ActivityFeed';
 import { PotGrowth } from '@/components/PotGrowth';
 import { recordReceiptClient } from '@/lib/receipt-client';
+import { fetchCircleEvents, type CircleActivity } from '@/lib/flow-events';
 import { computeReputation } from '@/lib/reputation';
 import { checkAchievements, type AchievementStatus } from '@/lib/achievements';
 import { MiniBadge } from '@/components/AchievementBadge';
@@ -452,6 +453,8 @@ export default function CircleDetailPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [autoExecuting, setAutoExecuting] = useState(false);
   const [cycleJustExecuted, setCycleJustExecuted] = useState(false);
+  const [lastPayout, setLastPayout] = useState<{ recipient: string; amount: string; cycle: string; txId: string } | null>(null);
+  const [payoutHistory, setPayoutHistory] = useState<CircleActivity[]>([]);
   const { formatFiat } = useFlowPrice();
 
   const countdown = useCountdown(circle ? parseFloat(circle.nextDeadline) : 0);
@@ -489,6 +492,20 @@ export default function CircleDetailPage() {
     return () => clearInterval(interval);
   }, [fetchCircle]);
 
+  // ── Fetch payout history from on-chain events ──
+  useEffect(() => {
+    if (!circleId) return;
+    let cancelled = false;
+    fetchCircleEvents(circleId)
+      .then((events) => {
+        if (!cancelled) {
+          setPayoutHistory(events.filter((e) => e.action === 'payout_executed'));
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [circleId, circle?.currentCycle]); // refetch when cycle advances
+
   // ── Auto-execute cycle when ALL members have contributed ──
   const allContributed = circle?.members?.length
     ? circle.members.every((m) => m.hasContributed)
@@ -505,6 +522,11 @@ export default function CircleDetailPage() {
     setAutoExecuting(true);
     (async () => {
       try {
+        // Capture payout details BEFORE executing (state will change after)
+        const payoutRecipient = circle.nextRecipient || 'unknown';
+        const payoutAmt = String(parseFloat(circle.config.contributionAmount) * parseInt(circle.config.maxMembers));
+        const payoutCycle = circle.currentCycle;
+
         showToast({ status: 'pending', message: 'All members contributed — executing payout...' });
         const txId = await sponsoredMutate({
           cadence: EXECUTE_CYCLE_TX,
@@ -513,9 +535,17 @@ export default function CircleDetailPage() {
         });
         showToast({ status: 'sealing', message: 'Executing payout — confirming on-chain...', txId });
         await fcl.tx(txId).onceSealed();
-        showToast({ status: 'sealed', message: 'Payout executed! Cycle advanced.', txId });
+
+        // Show payout-specific toast
+        const isYouRecipient = payoutRecipient === user.addr;
+        const toastMsg = isYouRecipient
+          ? `You received ${fmtFlow(payoutAmt)} FLOW! (Cycle ${payoutCycle})`
+          : `${fmtFlow(payoutAmt)} FLOW sent to ${truncAddr(payoutRecipient)} (Cycle ${payoutCycle})`;
+        showToast({ status: 'sealed', message: toastMsg, txId });
+
+        setLastPayout({ recipient: payoutRecipient, amount: payoutAmt, cycle: payoutCycle, txId });
         setCycleJustExecuted(true);
-        setTimeout(() => setCycleJustExecuted(false), 5000);
+        setTimeout(() => setCycleJustExecuted(false), 10000);
 
         // Fire-and-forget: record payout receipt
         if (hostAddress && user.addr && circle) {
@@ -547,10 +577,15 @@ export default function CircleDetailPage() {
 
   // ── Actions ──
   async function handleExecuteCycle() {
-    if (!hostAddress) return;
+    if (!hostAddress || !circle) return;
     setActionLoading(true);
     setError(null);
     try {
+      // Capture payout details BEFORE executing
+      const payoutRecipient = circle.nextRecipient || 'unknown';
+      const payoutAmt = String(parseFloat(circle.config.contributionAmount) * parseInt(circle.config.maxMembers));
+      const payoutCycle = circle.currentCycle;
+
       showToast({ status: 'pending', message: 'Executing payout — please confirm...' });
       const txId = await sponsoredMutate({
         cadence: EXECUTE_CYCLE_TX,
@@ -559,9 +594,16 @@ export default function CircleDetailPage() {
       });
       showToast({ status: 'sealing', message: 'Executing payout — confirming on-chain...', txId });
       await fcl.tx(txId).onceSealed();
-      showToast({ status: 'sealed', message: 'Payout executed! Cycle advanced.', txId });
+
+      const isYouRecipient = payoutRecipient === user.addr;
+      const toastMsg = isYouRecipient
+        ? `You received ${fmtFlow(payoutAmt)} FLOW! (Cycle ${payoutCycle})`
+        : `${fmtFlow(payoutAmt)} FLOW sent to ${truncAddr(payoutRecipient)} (Cycle ${payoutCycle})`;
+      showToast({ status: 'sealed', message: toastMsg, txId });
+
+      setLastPayout({ recipient: payoutRecipient, amount: payoutAmt, cycle: payoutCycle, txId });
       setCycleJustExecuted(true);
-      setTimeout(() => setCycleJustExecuted(false), 5000);
+      setTimeout(() => setCycleJustExecuted(false), 10000);
 
       // Fire-and-forget: record payout receipt to IPFS + on-chain
       if (hostAddress && user.addr && circle) {
@@ -974,12 +1016,32 @@ export default function CircleDetailPage() {
           </div>
         )}
 
-        {cycleJustExecuted && (
-          <div className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] py-4 text-sm font-medium text-emerald-400">
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-            </svg>
-            Payout sent! Cycle advanced.
+        {cycleJustExecuted && lastPayout && (
+          <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] px-5 py-4">
+            <div className="flex items-center gap-2 text-sm font-medium text-emerald-400">
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+              </svg>
+              {lastPayout.recipient === user.addr
+                ? `You received ${fmtFlow(lastPayout.amount)} FLOW!`
+                : `${fmtFlow(lastPayout.amount)} FLOW sent to ${truncAddr(lastPayout.recipient)}`}
+            </div>
+            <p className="mt-1 ml-7 text-xs text-emerald-500/60">
+              Cycle {lastPayout.cycle} payout confirmed
+              {lastPayout.txId && (
+                <>
+                  {' — '}
+                  <a
+                    href={`https://testnet.flowscan.io/transaction/${lastPayout.txId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline hover:text-emerald-400"
+                  >
+                    View on Flowscan
+                  </a>
+                </>
+              )}
+            </p>
           </div>
         )}
 
@@ -992,6 +1054,105 @@ export default function CircleDetailPage() {
           </div>
         )}
       </div>
+
+      {/* ── "You received" congratulations banner ── */}
+      {(() => {
+        if (!user.addr || payoutHistory.length === 0) return null;
+        const yourPayouts = payoutHistory.filter((e) => String(e.data.recipient) === user.addr);
+        if (yourPayouts.length === 0) return null;
+        const latest = yourPayouts[0]; // newest first
+        return (
+          <div className="mt-6 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] px-5 py-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-500/15 ring-1 ring-amber-500/25 text-lg">
+                <svg className="h-5 w-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-amber-300">
+                  You received {fmtFlow(String(latest.data.amount || '0'))} FLOW in Cycle {String(latest.data.cycle || '?')}
+                </p>
+                <p className="mt-0.5 text-xs text-amber-400/60">
+                  {yourPayouts.length > 1 ? `${yourPayouts.length} total payouts received` : 'Payout confirmed on-chain'}
+                  {latest.transactionId && (
+                    <>
+                      {' — '}
+                      <a
+                        href={`https://testnet.flowscan.io/transaction/${latest.transactionId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline hover:text-amber-300"
+                      >
+                        View on Flowscan
+                      </a>
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Payout History ── */}
+      {payoutHistory.length > 0 && (
+        <div className="mt-8">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-semibold text-zinc-100">Payout History</h2>
+            <span className="rounded-full bg-zinc-800 px-2.5 py-0.5 text-xs font-medium text-zinc-400">
+              {payoutHistory.length} payout{payoutHistory.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="mt-3 overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-900/40 divide-y divide-zinc-800/60">
+            {payoutHistory.map((payout, i) => {
+              const recipient = String(payout.data.recipient || '');
+              const amount = String(payout.data.amount || '0');
+              const cycle = String(payout.data.cycle || '?');
+              const isYou = recipient === user.addr;
+              return (
+                <div key={i} className={`flex items-center justify-between px-4 py-3 ${isYou ? 'bg-emerald-500/[0.03]' : ''}`}>
+                  <div className="flex items-center gap-3">
+                    <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${
+                      isYou ? 'bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30' : 'bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/30'
+                    }`}>
+                      {cycle}
+                    </div>
+                    <div>
+                      <p className="text-sm text-zinc-200">
+                        <span className="font-semibold text-emerald-400">{fmtFlow(amount)} FLOW</span>
+                        <span className="text-zinc-500"> to </span>
+                        <span className="font-mono text-zinc-300">{truncAddr(recipient)}</span>
+                        {isYou && (
+                          <span className="ml-1.5 rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
+                            You
+                          </span>
+                        )}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-zinc-600">
+                        {payout.timestamp ? new Date(payout.timestamp).toLocaleString() : ''}
+                      </p>
+                    </div>
+                  </div>
+                  {payout.transactionId && (
+                    <a
+                      href={`https://testnet.flowscan.io/transaction/${payout.transactionId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-emerald-400 transition-colors"
+                    >
+                      Flowscan
+                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </a>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ── Members ── */}
       <div className="mt-8">
