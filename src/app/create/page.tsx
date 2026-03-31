@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { fcl } from '@/lib/flow-config';
+import { sponsoredMutate } from '@/lib/flow-transaction';
 import { useTransactionToast } from '@/components/TransactionToast';
 import { recordReceiptClient } from '@/lib/receipt-client';
 import { fmtFlow, useFlowPrice } from '@/lib/currency';
@@ -120,14 +121,14 @@ export default function CreateCirclePage() {
     e.preventDefault();
     const validationError = validate();
     if (validationError) { setError(validationError); return; }
-    if (!user.loggedIn) { setError('Please connect your wallet first.'); return; }
+    if (!user.loggedIn) { setError('Please sign in first.'); return; }
 
     setSubmitting(true);
     setError(null);
 
     try {
-      showToast({ status: 'pending', message: 'Approve the transaction in your wallet...' });
-      const txId = await fcl.mutate({
+      showToast({ status: 'pending', message: 'Creating your circle — please confirm...' });
+      const txId = await sponsoredMutate({
         cadence: CREATE_CIRCLE_TX,
         args: (arg: any, t: any) => [
           arg(name, t.String),
@@ -136,13 +137,10 @@ export default function CreateCirclePage() {
           arg(parseInt(maxMembers).toString(), t.UInt64),
           arg(parseFloat(penaltyPercent).toFixed(8), t.UFix64),
         ],
-        proposer: fcl.currentUser,
-        payer: fcl.currentUser,
-        authorizations: [fcl.currentUser],
         limit: 9999,
       });
 
-      showToast({ status: 'sealing', message: 'Transaction sent — waiting for confirmation...', txId });
+      showToast({ status: 'sealing', message: 'Creating circle — waiting for confirmation...', txId });
       const txResult = await fcl.tx(txId).onceSealed();
 
       const createdEvent = txResult.events?.find(
@@ -196,7 +194,7 @@ export default function CreateCirclePage() {
           </svg>
         </div>
         <h1 className="mt-4 text-xl font-semibold text-zinc-100">Create a Circle</h1>
-        <p className="mt-2 text-sm text-zinc-500">Connect your wallet to create a savings circle.</p>
+        <p className="mt-2 text-sm text-zinc-500">Sign in to create a savings circle.</p>
       </div>
     );
   }

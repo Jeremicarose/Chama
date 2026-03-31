@@ -65,7 +65,7 @@ export default function AchievementsPage() {
       <div className="flex flex-col items-center py-32 text-center">
         <span className="text-4xl">🏆</span>
         <h1 className="mt-4 text-xl font-semibold text-zinc-100">Achievements</h1>
-        <p className="mt-2 text-sm text-zinc-500">Connect your wallet to view your achievements.</p>
+        <p className="mt-2 text-sm text-zinc-500">Sign in to view your achievements.</p>
       </div>
     );
   }

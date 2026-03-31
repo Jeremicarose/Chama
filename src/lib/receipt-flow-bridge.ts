@@ -108,16 +108,15 @@ export async function recordReceipt(
   const cid = await uploadReceipt(receiptData, prevCID);
 
   // Step 3: Store CID on-chain
-  const transactionId = await fcl.mutate({
+  // Import dynamically to avoid circular dependency (flow-transaction imports flow-config)
+  const { sponsoredMutate } = await import('@/lib/flow-transaction');
+  const transactionId = await sponsoredMutate({
     cadence: STORE_RECEIPT_CID_TX,
     args: (arg: any, t: any) => [
       arg(hostAddress, t.Address),
       arg(String(circleId), t.UInt64),
       arg(cid, t.String),
     ],
-    proposer: fcl.currentUser,
-    payer: fcl.currentUser,
-    authorizations: [fcl.currentUser],
     limit: 1000,
   });
 

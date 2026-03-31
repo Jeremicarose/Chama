@@ -227,7 +227,7 @@ export default function HistoryPage() {
         </div>
         <h1 className="mt-4 text-xl font-bold text-zinc-100">Receipt History</h1>
         <p className="mt-2 text-sm text-zinc-500">
-          Connect your wallet to view your circle receipt history.
+          Sign in to view your circle history.
         </p>
       </div>
     );

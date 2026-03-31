@@ -76,7 +76,7 @@ export default function Navbar() {
                   onClick={logOut}
                   className="rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-500 transition-colors hover:text-zinc-300"
                 >
-                  Disconnect
+                  Sign Out
                 </button>
               </div>
             ) : (
@@ -84,7 +84,7 @@ export default function Navbar() {
                 onClick={logIn}
                 className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-emerald-500/20 transition-all hover:bg-emerald-500 hover:shadow-emerald-500/30"
               >
-                Connect Wallet
+                Get Started
               </button>
             )}
 

@@ -5,8 +5,8 @@ export default defineConfig({
   timeout: 30000,
   retries: 0,
   use: {
-    baseURL: 'http://localhost:3000',
-    // Use Playwright's bundled Chromium (not system Chrome)
+    baseURL: 'http://locailhost:3000',
+    // Use Playwright's bundled Chromium (not system chrome)
     browserName: 'chromium',
     headless: true,
     viewport: { width: 1280, height: 720 },

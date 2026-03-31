@@ -119,6 +119,24 @@ fcl.config()
   // Get a free projectId at: https://cloud.walletconnect.com
   // For development, we use the env var or a placeholder that silences the warning.
   .put('walletconnect.projectId', process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'development')
+  // ─────────────────────────────────────────────────────────────────────────
+  // Blocto Wallet — Email-Based Onboarding
+  // ─────────────────────────────────────────────────────────────────────────
+  //
+  // Blocto lets users sign up with just an email address — no browser
+  // extension or seed phrase. It creates a custodial Flow account behind
+  // the scenes. By including Blocto's service address in discovery.authn.include,
+  // FCL shows it first (or only) in the wallet selection popup.
+  //
+  // Service address per network:
+  //   Testnet: 0x82ec283f88a62e65
+  //   Mainnet: 0xdb6b70764af4ff68
+  // ─────────────────────────────────────────────────────────────────────────
+  .put('discovery.authn.include', FLOW_NETWORK === 'mainnet'
+    ? ['0xdb6b70764af4ff68']
+    : FLOW_NETWORK === 'testnet'
+      ? ['0x82ec283f88a62e65']
+      : [])
   .put(
     '0xChamaCircle',
     CONTRACT_ADDRESSES[FLOW_NETWORK]?.ChamaCircle || CONTRACT_ADDRESSES.emulator.ChamaCircle,

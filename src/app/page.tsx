@@ -253,7 +253,7 @@ export default function Dashboard() {
         </div>
 
         <p className="relative mt-16 text-sm text-zinc-600">
-          Connect your wallet above to get started
+          Sign in above to get started
         </p>
       </div>
     );

@@ -9,6 +9,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { fcl } from '@/lib/flow-config';
+import { sponsoredMutate } from '@/lib/flow-transaction';
 import { useTransactionToast } from '@/components/TransactionToast';
 import { ReputationBadge } from '@/components/ReputationCard';
 import { ActivityFeed } from '@/components/ActivityFeed';
@@ -505,11 +506,10 @@ export default function CircleDetailPage() {
     (async () => {
       try {
         showToast({ status: 'pending', message: 'All members contributed — executing payout...' });
-        const txId = await fcl.mutate({
+        const txId = await sponsoredMutate({
           cadence: EXECUTE_CYCLE_TX,
           args: (arg: any, t: any) => [arg(hostAddress, t.Address), arg(circleId, t.UInt64)],
-          proposer: fcl.currentUser, payer: fcl.currentUser,
-          authorizations: [fcl.currentUser], limit: 9999,
+          limit: 9999,
         });
         showToast({ status: 'sealing', message: 'Executing payout — confirming on-chain...', txId });
         await fcl.tx(txId).onceSealed();
@@ -551,12 +551,11 @@ export default function CircleDetailPage() {
     setActionLoading(true);
     setError(null);
     try {
-      showToast({ status: 'pending', message: 'Executing cycle — approve in wallet...' });
-      const txId = await fcl.mutate({
+      showToast({ status: 'pending', message: 'Executing payout — please confirm...' });
+      const txId = await sponsoredMutate({
         cadence: EXECUTE_CYCLE_TX,
         args: (arg: any, t: any) => [arg(hostAddress, t.Address), arg(circleId, t.UInt64)],
-        proposer: fcl.currentUser, payer: fcl.currentUser,
-        authorizations: [fcl.currentUser], limit: 9999,
+        limit: 9999,
       });
       showToast({ status: 'sealing', message: 'Executing payout — confirming on-chain...', txId });
       await fcl.tx(txId).onceSealed();
@@ -595,12 +594,11 @@ export default function CircleDetailPage() {
     setActionLoading(true);
     setError(null);
     try {
-      showToast({ status: 'pending', message: 'Approve the join transaction in your wallet...' });
-      const txId = await fcl.mutate({
+      showToast({ status: 'pending', message: 'Joining circle — please confirm...' });
+      const txId = await sponsoredMutate({
         cadence: JOIN_CIRCLE_TX,
         args: (arg: any, t: any) => [arg(hostAddress, t.Address), arg(circleId, t.UInt64)],
-        proposer: fcl.currentUser, payer: fcl.currentUser,
-        authorizations: [fcl.currentUser], limit: 9999,
+        limit: 9999,
       });
       showToast({ status: 'sealing', message: 'Joining circle — confirming on-chain...', txId });
       await fcl.tx(txId).onceSealed();
@@ -643,24 +641,22 @@ export default function CircleDetailPage() {
     try {
       showToast({ status: 'pending', message: 'Setting up automatic payouts...' });
       // Step 1: Init handler
-      const initTxId = await fcl.mutate({
+      const initTxId = await sponsoredMutate({
         cadence: INIT_HANDLER_TX,
         args: (arg: any, t: any) => [arg(circleId, t.UInt64)],
-        proposer: fcl.currentUser, payer: fcl.currentUser,
-        authorizations: [fcl.currentUser], limit: 9999,
+        limit: 9999,
       });
       await fcl.tx(initTxId).onceSealed();
 
       // Step 2: Schedule next cycle
       const cycleDuration = state.config.cycleDuration;
-      const scheduleTxId = await fcl.mutate({
+      const scheduleTxId = await sponsoredMutate({
         cadence: SCHEDULE_NEXT_CYCLE_TX,
         args: (arg: any, t: any) => [
           arg(circleId, t.UInt64),
           arg(cycleDuration, t.UFix64),
         ],
-        proposer: fcl.currentUser, payer: fcl.currentUser,
-        authorizations: [fcl.currentUser], limit: 9999,
+        limit: 9999,
       });
       await fcl.tx(scheduleTxId).onceSealed();
       showToast({ status: 'sealed', message: 'Automatic payouts scheduled!', txId: scheduleTxId });
@@ -675,12 +671,11 @@ export default function CircleDetailPage() {
     setActionLoading(true);
     setError(null);
     try {
-      showToast({ status: 'pending', message: 'Approve the contribution in your wallet...' });
-      const txId = await fcl.mutate({
+      showToast({ status: 'pending', message: 'Sending your contribution — please confirm...' });
+      const txId = await sponsoredMutate({
         cadence: CONTRIBUTE_TX,
         args: (arg: any, t: any) => [arg(hostAddress, t.Address), arg(circleId, t.UInt64)],
-        proposer: fcl.currentUser, payer: fcl.currentUser,
-        authorizations: [fcl.currentUser], limit: 9999,
+        limit: 9999,
       });
       showToast({ status: 'sealing', message: 'Contributing — confirming on-chain...', txId });
       await fcl.tx(txId).onceSealed();

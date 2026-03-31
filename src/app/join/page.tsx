@@ -30,6 +30,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { fcl } from '@/lib/flow-config';
+import { sponsoredMutate } from '@/lib/flow-transaction';
 import { useTransactionToast } from '@/components/TransactionToast';
 import { ReputationBadge } from '@/components/ReputationCard';
 import { recordReceiptClient } from '@/lib/receipt-client';
@@ -245,12 +246,11 @@ export default function MarketplacePage() {
     if (!circle.hostAddress) return;
     setJoiningId(circle.circleId);
     try {
-      showToast({ status: 'pending', message: 'Approve the join transaction...' });
-      const txId = await fcl.mutate({
+      showToast({ status: 'pending', message: 'Joining circle — please confirm...' });
+      const txId = await sponsoredMutate({
         cadence: JOIN_CIRCLE_TX,
         args: (arg: any, t: any) => [arg(circle.hostAddress, t.Address), arg(circle.circleId, t.UInt64)],
-        proposer: fcl.currentUser, payer: fcl.currentUser,
-        authorizations: [fcl.currentUser], limit: 9999,
+        limit: 9999,
       });
       showToast({ status: 'sealing', message: 'Joining — confirming on-chain...', txId });
       await fcl.tx(txId).onceSealed();
@@ -301,7 +301,7 @@ export default function MarketplacePage() {
           </svg>
         </div>
         <h1 className="mt-4 text-xl font-semibold text-zinc-100">Circle Marketplace</h1>
-        <p className="mt-2 text-sm text-zinc-500">Connect your wallet to discover and join savings circles.</p>
+        <p className="mt-2 text-sm text-zinc-500">Sign in to discover and join savings circles.</p>
       </div>
     );
   }
