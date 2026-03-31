@@ -37,6 +37,7 @@
 // =============================================================================
 
 import { fcl } from '@/lib/flow-config';
+import { getMagicAuthorization } from '@/lib/magic-auth';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -140,8 +141,11 @@ function serverPayerAuthz(account: any) {
 export async function sponsoredMutate(options: MutateOptions): Promise<string> {
   const { cadence, args, limit = 9999, authorization } = options;
 
-  // Use custom authorization (e.g., Magic.link) or default to fcl.currentUser
-  const authz = authorization || fcl.currentUser;
+  // Auto-detect authorization: explicit > Magic.link > fcl.currentUser
+  // This prevents the FCL Discovery wallet picker from appearing when the
+  // user is signed in via Magic. getMagicAuthorization() returns null if
+  // Magic isn't configured or the user isn't logged in via Magic.
+  const authz = authorization || getMagicAuthorization() || fcl.currentUser;
 
   // If admin address is configured, sponsor gas via server
   if (ADMIN_ADDRESS) {

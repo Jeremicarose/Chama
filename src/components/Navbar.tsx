@@ -40,7 +40,15 @@ export default function Navbar() {
   const [showEmailInput, setShowEmailInput] = useState(false);
   const [email, setEmail] = useState('');
   const [signingIn, setSigningIn] = useState(false);
+  const [copied, setCopied] = useState(false);
   const pathname = usePathname();
+
+  function copyAddress() {
+    if (!user.addr) return;
+    navigator.clipboard.writeText(user.addr);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
 
   async function handleGetStarted() {
     if (magicAvailable) {
@@ -106,12 +114,16 @@ export default function Navbar() {
           <div className="flex items-center gap-2">
             {user.loggedIn ? (
               <div className="flex items-center gap-2">
-                <div className="flex items-center gap-2 rounded-lg bg-zinc-900 px-3 py-1.5 ring-1 ring-zinc-800">
+                <button
+                  onClick={copyAddress}
+                  title={user.addr || 'Copy address'}
+                  className="flex items-center gap-2 rounded-lg bg-zinc-900 px-3 py-1.5 ring-1 ring-zinc-800 transition-colors hover:ring-emerald-500/50 cursor-pointer"
+                >
                   <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50" />
                   <span className="hidden sm:inline font-mono text-xs text-zinc-400">
-                    {user.addr ? truncateAddress(user.addr) : 'Signed in'}
+                    {copied ? 'Copied!' : user.addr || 'Signed in'}
                   </span>
-                </div>
+                </button>
                 <button
                   onClick={logOut}
                   className="rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-500 transition-colors hover:text-zinc-300"

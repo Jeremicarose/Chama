@@ -113,7 +113,9 @@ export async function magicLogin(email: string): Promise<string | null> {
     await magic.auth.loginWithMagicLink({ email });
 
     // Step 2: Get the Flow account address
-    const account = await (magic.extensions as any).flow.getAccount();
+    // The Flow extension is registered as `magic.flow` (flat on the instance),
+    // NOT `magic.extensions.flow`. This is how Magic SDK extension mounting works.
+    const account = await magic.flow.getAccount();
     return account ?? null;
   } catch (err) {
     console.error('Magic login failed:', err);
@@ -167,5 +169,5 @@ export async function isMagicLoggedIn(): Promise<boolean> {
 export function getMagicAuthorization(): any {
   const magic = getMagic();
   if (!magic) return null;
-  return (magic.extensions as any).flow.authorization;
+  return magic.flow.authorization;
 }
