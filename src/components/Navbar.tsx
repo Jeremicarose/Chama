@@ -1,5 +1,17 @@
 // =============================================================================
-// Navbar.tsx — Top navigation bar with wallet connection
+// Navbar.tsx — Top navigation bar with email-based sign-in
+// =============================================================================
+//
+// AUTHENTICATION FLOW:
+//   When Magic.link is configured (NEXT_PUBLIC_MAGIC_API_KEY):
+//     1. User clicks "Get Started" → email input slides open
+//     2. User enters email → Magic sends a verification link
+//     3. User clicks link in email → signed in, address shown
+//
+//   When Magic is NOT configured (fallback):
+//     1. User clicks "Get Started" → FCL Discovery opens
+//     2. User picks a wallet (Blocto, Flow Wallet, etc.)
+//     3. Wallet authenticates → signed in
 // =============================================================================
 
 'use client';
@@ -23,9 +35,37 @@ const NAV_LINKS = [
 ];
 
 export default function Navbar() {
-  const { user, logIn, logOut } = useCurrentUser();
+  const { user, logIn, logOut, magicAvailable } = useCurrentUser();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showEmailInput, setShowEmailInput] = useState(false);
+  const [email, setEmail] = useState('');
+  const [signingIn, setSigningIn] = useState(false);
   const pathname = usePathname();
+
+  async function handleGetStarted() {
+    if (magicAvailable) {
+      // Show email input form
+      setShowEmailInput(true);
+    } else {
+      // Fallback: FCL Discovery
+      await logIn();
+    }
+  }
+
+  async function handleEmailSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email.trim()) return;
+    setSigningIn(true);
+    try {
+      await logIn(email.trim());
+      setShowEmailInput(false);
+      setEmail('');
+    } catch (err) {
+      console.error('Sign in failed:', err);
+    } finally {
+      setSigningIn(false);
+    }
+  }
 
   return (
     <nav className="sticky top-0 z-40 border-b border-zinc-800/80 bg-zinc-950/80 backdrop-blur-xl">
@@ -62,14 +102,14 @@ export default function Navbar() {
             })}
           </div>
 
-          {/* ── Wallet ── */}
+          {/* ── Auth Section ── */}
           <div className="flex items-center gap-2">
             {user.loggedIn ? (
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-2 rounded-lg bg-zinc-900 px-3 py-1.5 ring-1 ring-zinc-800">
                   <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50" />
                   <span className="hidden sm:inline font-mono text-xs text-zinc-400">
-                    {user.addr ? truncateAddress(user.addr) : ''}
+                    {user.addr ? truncateAddress(user.addr) : 'Signed in'}
                   </span>
                 </div>
                 <button
@@ -79,9 +119,37 @@ export default function Navbar() {
                   Sign Out
                 </button>
               </div>
+            ) : showEmailInput ? (
+              /* ── Email sign-in form ── */
+              <form onSubmit={handleEmailSubmit} className="flex items-center gap-2">
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Enter your email"
+                  autoFocus
+                  disabled={signingIn}
+                  className="w-48 rounded-lg bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 ring-1 ring-zinc-700 focus:outline-none focus:ring-emerald-500 disabled:opacity-50"
+                />
+                <button
+                  type="submit"
+                  disabled={signingIn || !email.trim()}
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-emerald-500/20 transition-all hover:bg-emerald-500 disabled:opacity-50"
+                >
+                  {signingIn ? 'Signing in...' : 'Sign In'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowEmailInput(false); setEmail(''); }}
+                  className="rounded-lg px-2 py-2 text-xs text-zinc-500 hover:text-zinc-300"
+                >
+                  Cancel
+                </button>
+              </form>
             ) : (
+              /* ── Get Started button ── */
               <button
-                onClick={logIn}
+                onClick={handleGetStarted}
                 className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-emerald-500/20 transition-all hover:bg-emerald-500 hover:shadow-emerald-500/30"
               >
                 Get Started

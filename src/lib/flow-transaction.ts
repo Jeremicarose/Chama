@@ -46,6 +46,9 @@ interface MutateOptions {
   cadence: string;
   args?: (arg: any, t: any) => any[];
   limit?: number;
+  // Optional: pass a custom authorization function (e.g., from Magic.link).
+  // If not provided, defaults to fcl.currentUser (standard wallet auth).
+  authorization?: any;
 }
 
 // FCL's "signable" object — the data structure passed to authorization functions
@@ -135,16 +138,19 @@ function serverPayerAuthz(account: any) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function sponsoredMutate(options: MutateOptions): Promise<string> {
-  const { cadence, args, limit = 9999 } = options;
+  const { cadence, args, limit = 9999, authorization } = options;
+
+  // Use custom authorization (e.g., Magic.link) or default to fcl.currentUser
+  const authz = authorization || fcl.currentUser;
 
   // If admin address is configured, sponsor gas via server
   if (ADMIN_ADDRESS) {
     return fcl.mutate({
       cadence,
       args,
-      proposer: fcl.currentUser,
+      proposer: authz,
       payer: serverPayerAuthz,
-      authorizations: [fcl.currentUser],
+      authorizations: [authz],
       limit,
     });
   }
@@ -153,9 +159,9 @@ export async function sponsoredMutate(options: MutateOptions): Promise<string> {
   return fcl.mutate({
     cadence,
     args,
-    proposer: fcl.currentUser,
-    payer: fcl.currentUser,
-    authorizations: [fcl.currentUser],
+    proposer: authz,
+    payer: authz,
+    authorizations: [authz],
     limit,
   });
 }

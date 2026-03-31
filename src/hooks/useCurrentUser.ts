@@ -1,117 +1,138 @@
 // =============================================================================
-// useCurrentUser.ts — React hook for Flow wallet authentication state
+// useCurrentUser.ts — React hook for authentication (Magic.link + FCL)
 // =============================================================================
 //
 // PURPOSE:
-//   Wraps FCL's currentUser observable into a React hook. Any component that
-//   needs to know "is the user logged in?" or "what's their address?" imports
-//   this hook instead of dealing with FCL subscriptions directly.
+//   Provides a unified auth interface. When Magic.link is configured
+//   (NEXT_PUBLIC_MAGIC_API_KEY is set), users sign in via email — no wallet
+//   extension needed. When Magic isn't configured, falls back to FCL
+//   Discovery (wallet picker: Blocto, Flow Wallet, etc.).
 //
-// WHY A CUSTOM HOOK (not useContext)?
-//   FCL already manages global auth state internally via its currentUser
-//   observable. Wrapping it in React Context would add a redundant layer.
-//   This hook subscribes directly to FCL's observable — simpler, fewer
-//   re-renders, and no provider nesting needed.
-//
-// ALTERNATIVE CONSIDERED:
-//   @onflow/fcl-react provides a <CurrentUserProvider> + useCurrentUser().
-//   We roll our own because: (a) it's 15 lines of code, (b) we control the
-//   TypeScript types, (c) we avoid an extra dependency. If the app grows,
-//   switching to @onflow/fcl-react is trivial.
-//
-// HOW FCL AUTH WORKS:
-//   1. User clicks "Connect Wallet" → we call fcl.authenticate()
-//   2. FCL opens the Discovery UI (iframe/popup) showing available wallets
-//   3. User selects a wallet (Lilico, Blocto, dev-wallet on emulator)
-//   4. Wallet signs a proof-of-ownership message
-//   5. FCL updates currentUser with { addr, loggedIn: true, cid }
-//   6. Our subscription fires → React state updates → UI re-renders
+// WHY DUAL AUTH?
+//   Magic.link provides the best "consumer DeFi" experience (email login,
+//   no crypto knowledge required). But for hackathon judges who want to
+//   test with their own wallets, FCL Discovery is the fallback.
 //
 // USAGE:
-//   const { user, logIn, logOut } = useCurrentUser();
+//   const { user, logIn, logOut, authMethod } = useCurrentUser();
 //   if (user.loggedIn) { ... user.addr ... }
+//   // authMethod is 'magic' | 'fcl' | null
 // =============================================================================
 
 'use client';
-// ^^^^^^^^^^^
-// Next.js App Router splits code into Server Components (default) and Client
-// Components. Hooks (useState, useEffect) only work in Client Components.
-// 'use client' tells Next.js to bundle this for the browser, not the server.
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { fcl } from '@/lib/flow-config';
+import {
+  getMagic,
+  magicLogin,
+  magicLogout,
+  isMagicLoggedIn,
+  getMagicAuthorization,
+} from '@/lib/magic-auth';
 
 // =============================================================================
 // Types
 // =============================================================================
 
-/**
- * Shape of the user object from FCL's currentUser.subscribe().
- *
- * FIELDS:
- * - addr: The user's Flow address (e.g., "0x4648c731f1777d9d") or null
- * - loggedIn: Whether the user has authenticated with a wallet
- * - cid: Composite ID from the wallet service (internal FCL use)
- *
- * WHY NOT USE FCL's built-in types?
- *   @onflow/fcl's TypeScript types are incomplete/outdated. Defining our
- *   own interface gives us control and better IDE autocomplete.
- */
 export interface FlowUser {
   addr?: string | null;
   loggedIn?: boolean;
   cid?: string | null;
 }
 
-// Default state before FCL reports anything. Using a constant avoids
-// creating a new object on every render (referential stability).
 const DEFAULT_USER: FlowUser = { addr: null, loggedIn: false, cid: null };
+
+// Auth method tracks how the user signed in
+type AuthMethod = 'magic' | 'fcl' | null;
 
 // =============================================================================
 // Hook
 // =============================================================================
 
 export function useCurrentUser() {
-  // -------------------------------------------------------------------------
-  // State: holds the latest user snapshot from FCL
-  // -------------------------------------------------------------------------
   const [user, setUser] = useState<FlowUser>(DEFAULT_USER);
+  const [authMethod, setAuthMethod] = useState<AuthMethod>(null);
 
-  // -------------------------------------------------------------------------
-  // Subscription: listen to FCL's currentUser observable
-  // -------------------------------------------------------------------------
-  //
-  // useEffect runs after the first render (and never again, since deps=[]).
-  // fcl.currentUser.subscribe() does two things:
-  //   1. Immediately calls our callback with the current auth state
-  //   2. Calls it again whenever the user logs in or out
-  //
-  // The returned function is the unsubscribe cleanup — React calls it
-  // when the component unmounts, preventing memory leaks.
-  //
-  // WHY NOT useCallback for setUser?
-  //   setUser from useState is already stable (React guarantees it).
-  //   Wrapping it in useCallback would be redundant.
+  // Check if Magic.link is configured (has API key)
+  const magicAvailable = typeof window !== 'undefined' && !!process.env.NEXT_PUBLIC_MAGIC_API_KEY;
+
+  // ── FCL subscription (always active for FCL-based logins) ──
   useEffect(() => {
     const unsubscribe = fcl.currentUser.subscribe((snapshot: FlowUser) => {
-      setUser(snapshot ?? DEFAULT_USER);
+      // Only update from FCL if we're not using Magic
+      if (authMethod !== 'magic') {
+        setUser(snapshot ?? DEFAULT_USER);
+        if (snapshot?.loggedIn && !authMethod) {
+          setAuthMethod('fcl');
+        }
+      }
     });
     return () => unsubscribe();
-  }, []);
+  }, [authMethod]);
 
-  // -------------------------------------------------------------------------
-  // Actions: thin wrappers around FCL's auth methods
-  // -------------------------------------------------------------------------
-  //
-  // fcl.authenticate() opens the wallet discovery UI.
-  // fcl.unauthenticate() clears the session (no wallet interaction needed).
-  //
-  // WHY ARROW FUNCTIONS (not binding)?
-  //   Arrow functions are simpler and don't need `this` binding.
-  //   They're re-created on each render, but since they're just calling
-  //   FCL functions (no closures over changing state), this is fine.
-  const logIn = () => fcl.authenticate();
-  const logOut = () => fcl.unauthenticate();
+  // ── Check for existing Magic session on mount ──
+  useEffect(() => {
+    if (!magicAvailable) return;
 
-  return { user, logIn, logOut };
+    (async () => {
+      try {
+        const loggedIn = await isMagicLoggedIn();
+        if (loggedIn) {
+          const magic = getMagic();
+          if (magic) {
+            const account = await (magic.extensions as any).flow.getAccount();
+            if (account) {
+              setUser({ addr: account, loggedIn: true });
+              setAuthMethod('magic');
+            }
+          }
+        }
+      } catch {
+        // Silent — no existing session
+      }
+    })();
+  }, [magicAvailable]);
+
+  // ── Login ──
+  // If Magic is available, shows email prompt. Otherwise opens FCL Discovery.
+  const logIn = useCallback(async (email?: string) => {
+    if (magicAvailable && email) {
+      // Magic.link email login
+      const addr = await magicLogin(email);
+      if (addr) {
+        setUser({ addr, loggedIn: true });
+        setAuthMethod('magic');
+      }
+    } else if (magicAvailable && !email) {
+      // Magic is available but no email provided — caller should show email form
+      // This signals the UI to show the email input
+      return 'needs-email' as const;
+    } else {
+      // Fallback: FCL Discovery (wallet picker)
+      await fcl.authenticate();
+      setAuthMethod('fcl');
+    }
+  }, [magicAvailable]);
+
+  // ── Logout ──
+  const logOut = useCallback(async () => {
+    if (authMethod === 'magic') {
+      await magicLogout();
+    }
+    fcl.unauthenticate();
+    setUser(DEFAULT_USER);
+    setAuthMethod(null);
+  }, [authMethod]);
+
+  // ── Get authorization function for transactions ──
+  // Returns the correct authorization function based on auth method
+  const getAuthorization = useCallback(() => {
+    if (authMethod === 'magic') {
+      return getMagicAuthorization();
+    }
+    return fcl.currentUser;
+  }, [authMethod]);
+
+  return { user, logIn, logOut, authMethod, getAuthorization, magicAvailable };
 }
