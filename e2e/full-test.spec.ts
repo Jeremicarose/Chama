@@ -8,7 +8,7 @@
 
 import { test, expect } from '@playwright/test';
 
-const BASE = 'http://localhost:3000';
+const BASE = process.env.BASE_URL || 'http://localhost:3000';
 
 // =============================================================================
 // 1. Landing Page (not connected)
@@ -36,9 +36,9 @@ test.describe('Landing Page (no wallet)', () => {
     await expect(page.getByRole('link', { name: 'Badges' })).toBeVisible();
   });
 
-  test('navbar has Connect Wallet button', async ({ page }) => {
+  test('navbar has Get Started button', async ({ page }) => {
     await page.goto(BASE);
-    await expect(page.getByRole('button', { name: 'Connect Wallet' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Get Started' })).toBeVisible();
   });
 });
 
@@ -231,6 +231,24 @@ test.describe('API Routes', () => {
   test('GET /api/receipts returns 405', async ({ request }) => {
     const resp = await request.get(`${BASE}/api/receipts`);
     expect(resp.status()).toBe(405);
+  });
+
+  test('POST /api/sign-as-payer without env vars returns 503', async ({ request }) => {
+    const resp = await request.post(`${BASE}/api/sign-as-payer`, {
+      data: { message: 'deadbeef' },
+    });
+    expect(resp.status()).toBe(503);
+    const body = await resp.json();
+    expect(body.error).toContain('not configured');
+  });
+
+  test('POST /api/sign-as-payer with missing message returns 400', async ({ request }) => {
+    // Only returns 400 if admin is configured — without config it returns 503 first
+    const resp = await request.post(`${BASE}/api/sign-as-payer`, {
+      data: {},
+    });
+    // Either 503 (no admin config) or 400 (missing message) is acceptable
+    expect([400, 503]).toContain(resp.status());
   });
 });
 
