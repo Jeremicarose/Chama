@@ -1,10 +1,34 @@
 # Chama — Trustless Rotating Savings Circles on Flow
 
-Chama brings the centuries-old tradition of community savings circles (ROSCAs) to the blockchain. Members pool money each cycle, and one person receives the entire pot on a rotating basis — all enforced by smart contracts. No middleman. No trust needed. Just code.
+> *In communities across Africa, Asia, and Latin America, millions of people save money together through rotating savings circles — known as "chamas" in Kenya, "tandas" in Mexico, "susus" in West Africa. Each month, everyone contributes, and one person takes home the full pot. It's mutual aid powered by trust.*
+>
+> *But trust breaks down. Leaders disappear with funds. Members skip payments. There's no enforcement, no transparency, no recourse. Billions of dollars flow through these informal circles every year with zero protection.*
+>
+> **Chama puts the entire savings circle on-chain — every contribution, every payout, every penalty enforced by smart contracts. The code is the middleman.**
 
 **Built for the PL Genesis Hackathon 2026.**
 
-## How It Works
+**[Live Demo](https://chama-eosin.vercel.app)** | **[Testnet Contracts](https://testnet.flowscan.io/account/0x4648c731f1777d9d)**
+
+---
+
+## The Problem
+
+Traditional savings circles (ROSCAs) move **billions of dollars annually** across developing economies, yet they run entirely on trust:
+
+| The Problem | The Reality |
+|---|---|
+| Group leaders hold all funds | No accountability — they can vanish |
+| Payments tracked on paper | Disputes with no resolution |
+| No penalty for skipping | Free-riders destroy the circle |
+| No transparency | Members can't verify the math |
+| Limited to your village | Can't form circles with strangers |
+
+People who depend on these circles the most — low-income communities, migrant workers, small business owners — are the ones hurt worst when trust fails.
+
+## The Solution
+
+Chama replaces trust with code. Three smart contracts on Flow handle the entire lifecycle of a savings circle:
 
 ```
 1. SIGN IN  — Enter your email (no wallet extension needed)
@@ -16,86 +40,134 @@ Chama brings the centuries-old tradition of community savings circles (ROSCAs) t
 7. DONE     — After all cycles, deposits are returned automatically
 ```
 
-### What makes this different from traditional chamas?
+Every step is enforced on-chain. Miss a payment? Your deposit gets slashed automatically. Try to take the pot and run? Impossible — the smart contract controls all funds. Want to verify? Every action has a Flowscan link.
 
-| Traditional | Chama on Flow |
+## Why This Matters: Consumer DeFi
+
+Here's the key insight: **the people who need this most have never touched crypto.** So we built Chama to feel like a normal fintech app, not a crypto dApp:
+
+| Crypto Problem | Chama Solution |
 |---|---|
-| Trust the group leader | Smart contract holds all funds |
-| Manual collection | Automatic contributions |
-| No enforcement | Penalties enforced by code (deposit slashing) |
-| Need a wallet extension | Sign in with email (Magic.link) |
-| Users pay gas fees | Gas fees sponsored by the app |
-| No audit trail | Every action recorded on-chain with Flowscan links |
-| Easy to cheat | Cryptographically impossible to cheat |
+| "Install MetaMask" | Sign in with your email via Magic.link |
+| "Approve transaction — Gas: 0.002 ETH" | Zero gas fees — server-side sponsorship |
+| "Connect wallet to dApp" | No wallet needed, ever |
+| "Sign this hex payload" | "Contribute" button, one click |
+| "Check Etherscan for TX status" | Real-time toast notifications + Flowscan links |
+| "What's my reputation?" | On-chain trust scores computed from history |
 
-## Consumer DeFi Features
+**The blockchain is invisible.** Users see "Contribute 100 FLOW" — not "Approve ERC-20 transfer of 100000000000000000 wei to contract 0x7a3f...". That's the difference between a product and a proof of concept.
 
-Chama is designed to feel like a **normal fintech app**, not a crypto dApp:
+## Features
 
-- **Walletless onboarding** — Sign up with email via Magic.link. No browser extension, no seed phrases, no hex addresses to understand.
-- **Sponsored gas** — Users never see or pay transaction fees. A server-side admin account pays gas on behalf of users.
-- **Human language** — No "wallet", "transaction", or "approve in wallet" jargon. Just "Sign in", "Contribute", and "Confirm".
-- **Automatic execution** — Payouts execute automatically when all members contribute. No manual triggers needed.
-- **Payout notifications** — Real-time toast notifications showing who received how much, persistent payout history with Flowscan links, and a "You received" congratulations banner.
-- **Reputation system** — On-chain trust scores (Consistency, Reliability, Experience, Standing) computed from contribution history.
-- **Achievement badges** — 12 unlockable badges for milestones (First Circle, Perfect Record, etc.).
+- **Walletless onboarding** — Email sign-in via Magic.link. No browser extensions, no seed phrases, no hex addresses.
+- **Sponsored gas** — Users never see or pay transaction fees. A server-side admin account pays gas on every transaction.
+- **Automatic payouts** — When all members contribute, the smart contract distributes the full pool to the next recipient instantly.
+- **Deposit slashing** — Miss a payment? Your security deposit gets penalized automatically. No arguments, no excuses.
+- **Force execution** — If someone ghosts after the grace period, any member can trigger the payout and penalize non-payers.
+- **Payout notifications** — Real-time toast showing who received how much, persistent payout history, and a "You received" congratulations banner.
+- **On-chain reputation** — Four trust dimensions (Consistency, Reliability, Experience, Standing) computed from contribution history. Your track record follows you.
+- **Achievement badges** — 12 unlockable badges for milestones (First Circle, Perfect Record, Veteran, etc.).
+- **Fiat conversion** — Live FLOW/USD prices so users see real money values, not just token amounts.
+- **Full audit trail** — Every action recorded on-chain. Every transaction linked to Flowscan. Complete transparency.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    FRONTEND (Next.js 16)                   │
-│  Dashboard │ Create │ Join │ Circle Detail │ History       │
-│  Badges │ Reputation │ Payout Notifications                │
-│                                                           │
-│  Magic.link (email auth) ←→ FCL (Flow Client Library)     │
-└──────────────────────┬────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                     FRONTEND (Next.js 16)                   │
+│  Dashboard │ Create │ Join │ Circle Detail │ History        │
+│  Badges │ Reputation │ Payout Notifications                 │
+│                                                             │
+│  Magic.link (email auth) ←→ FCL (Flow Client Library)      │
+└──────────────────────┬──────────────────────────────────────┘
                        │ Cadence transactions & scripts
                        ▼
-┌─────────────────────────────────────────────────────────┐
-│                  FLOW BLOCKCHAIN (Testnet)                 │
-│                                                           │
-│  ┌──────────────┐ ┌────────────────┐ ┌──────────────┐    │
-│  │ ChamaCircle  │ │ ChamaScheduler │ │ ChamaManager │    │
-│  │              │ │                │ │              │    │
-│  │ • createCircle│ │ • TransHandler │ │ • registry   │    │
-│  │ • join       │ │ • executeTx()  │ │ • lookup     │    │
-│  │ • contribute │ │                │ │              │    │
-│  │ • executeCycle│ └────────────────┘ └──────────────┘    │
-│  │ • penalize   │                                        │
-│  │ • returnDeps │                                        │
-│  └──────────────┘                                        │
-└──────────────────────┬────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                  FLOW BLOCKCHAIN (Testnet)                   │
+│                                                             │
+│  ┌──────────────┐  ┌────────────────┐  ┌──────────────┐    │
+│  │ ChamaCircle  │  │ ChamaScheduler │  │ ChamaManager │    │
+│  │              │  │                │  │              │    │
+│  │ • createCircle│  │ • TransHandler │  │ • registry   │    │
+│  │ • join       │  │ • executeTx()  │  │ • lookup     │    │
+│  │ • contribute │  │                │  │              │    │
+│  │ • executeCycle│  └────────────────┘  └──────────────┘    │
+│  │ • penalize   │                                           │
+│  │ • returnDeps │                                           │
+│  └──────────────┘                                           │
+└──────────────────────┬──────────────────────────────────────┘
                        │
                        ▼
-┌─────────────────────────────────────────────────────────┐
-│              SERVER-SIDE GAS SPONSORSHIP                   │
-│                                                           │
-│  /api/sign-as-payer — Signs transaction envelopes as      │
-│  payer role using admin private key (ECDSA_P256 + SHA3)   │
-│  Users sign the action, admin pays the gas. Zero cost.    │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│               SERVER-SIDE GAS SPONSORSHIP                   │
+│                                                             │
+│  /api/sign-as-payer — Signs transaction envelopes as payer  │
+│  role using admin private key (ECDSA_P256 + SHA3-256).      │
+│  Users sign the action, admin pays the gas. Zero cost.      │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ### Three Smart Contracts
 
-**ChamaCircle** — The core logic. Creates circle resources, manages member lifecycle (join, seal, contribute), executes payouts via rotation, penalizes delinquent members by slashing deposits, and returns deposits when complete.
+**ChamaCircle** — The core engine. Creates circle resources, manages the full member lifecycle (join → seal → contribute → payout → complete), enforces contribution rules, executes rotating payouts, slashes deposits for delinquent members, and returns deposits when all cycles finish. The `executeCycle()` function is `access(all)` — anyone can call it, and the contract enforces all rules regardless of who triggers it.
 
-**ChamaScheduler** — Implements Flow's `TransactionHandler` interface. Holds a pre-authorized capability to the circle, allowing the Flow protocol to call `executeCycle()` automatically at each deadline.
+**ChamaScheduler** — Implements Flow's `TransactionHandler` interface. Holds a pre-authorized capability to the circle, enabling the Flow protocol to call `executeCycle()` automatically at scheduled deadlines.
 
-**ChamaManager** — Global registry mapping circle IDs to host addresses and member addresses to their circles. Enables frontend discovery without scanning all accounts on-chain.
+**ChamaManager** — Global registry mapping circle IDs to host addresses and member addresses to their circles. This is what lets the frontend discover circles without scanning every account on-chain.
+
+## How the Payout Works
+
+Payouts are **contribution-driven** — each cycle waits for all members to contribute, then executes automatically:
+
+```
+          ┌──────────────┐
+          │  Cycle Start │
+          └──────┬───────┘
+                 ▼
+     ┌───────────────────────┐
+     │  Members contribute   │  ← Each sends their share (e.g. 100 FLOW)
+     │  one by one           │
+     └───────────┬───────────┘
+                 ▼
+        ┌────────────────┐        ┌──────────────────────┐
+        │ All contributed?├──No──►│ Grace period (3x dur) │
+        └───────┬────────┘        └──────────┬───────────┘
+                │ Yes                        │ Expired
+                ▼                            ▼
+     ┌──────────────────┐        ┌───────────────────────┐
+     │  AUTO-EXECUTE    │        │ FORCE EXECUTE         │
+     │  Payout fires    │        │ Any member triggers   │
+     │  instantly       │        │ Non-payers penalized  │
+     └───────┬──────────┘        └───────────┬───────────┘
+             │                               │
+             └───────────┬───────────────────┘
+                         ▼
+              ┌──────────────────┐
+              │ Recipient gets   │  ← Rotation by join order
+              │ the full pool    │
+              └────────┬─────────┘
+                       ▼
+              ┌──────────────────┐        ┌─────────────────┐
+              │ More cycles?     ├──No──►│ Return deposits  │
+              └───────┬──────────┘        │ Circle complete  │
+                      │ Yes               └─────────────────┘
+                      ▼
+              ┌──────────────────┐
+              │ Next cycle begins│
+              └──────────────────┘
+```
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Blockchain | Flow (Testnet) |
-| Smart Contracts | Cadence |
-| Frontend | Next.js 16, React 19, Tailwind CSS v4 |
-| Authentication | Magic.link (email) + FCL Discovery (wallet fallback) |
-| Gas Sponsorship | Server-side payer (ECDSA_P256 + SHA3-256) |
-| On-chain Events | Flow REST API (activity feed, payout history) |
-| Wallet Integration | FCL (Flow Client Library) |
+| Layer | Technology | Why |
+|---|---|---|
+| Blockchain | Flow (Testnet) | Resource-oriented model, native scheduled transactions, low fees |
+| Smart Contracts | Cadence | Type-safe, resource-based — prevents entire classes of DeFi exploits |
+| Frontend | Next.js 16, React 19, Tailwind CSS v4 | Modern stack, server components, fast builds |
+| Authentication | Magic.link | Email-based walletless onboarding — zero crypto friction |
+| Gas Sponsorship | Server-side payer (ECDSA_P256 + SHA3-256) | Users never pay fees |
+| On-chain Events | Flow REST API | Activity feed, payout history, audit trail |
+| Wallet Fallback | FCL (Flow Client Library) | For power users who prefer wallet extensions |
 
 ## Project Structure
 
@@ -143,10 +215,6 @@ Chama/
 │       ├── currency.ts               # FLOW price + fiat conversion
 │       ├── reputation.ts             # On-chain reputation scoring
 │       └── achievements.ts           # Achievement badge logic
-├── e2e/
-│   └── full-test.spec.ts            # Playwright end-to-end tests
-├── scripts/
-│   └── auto-commit.sh               # Auto-commit with conventional messages
 ├── flow.json                         # Flow project config
 └── package.json
 ```
@@ -175,71 +243,46 @@ The app runs at `http://localhost:3000`.
 Create `.env.local`:
 
 ```bash
-# Flow network (testnet recommended for testing)
+# Flow network
 NEXT_PUBLIC_FLOW_NETWORK=testnet
 
-# Magic.link — Email-based walletless onboarding
-# Get a free key at https://dashboard.magic.link
+# Magic.link — get a free key at https://dashboard.magic.link
 NEXT_PUBLIC_MAGIC_API_KEY=your_magic_api_key
 
 # Optional: Server-side gas sponsorship
-# Fund an admin account on testnet via https://faucet.flow.com
 FLOW_ADMIN_ADDRESS=0x...
 FLOW_ADMIN_PRIVATE_KEY=...
 FLOW_ADMIN_KEY_INDEX=0
-NEXT_PUBLIC_FLOW_ADMIN_ADDRESS=0x...
-NEXT_PUBLIC_FLOW_ADMIN_KEY_INDEX=0
 ```
 
-### Deploy to Vercel
+### Deploy
 
 ```bash
-# Install Vercel CLI
-npm i -g vercel
-
-# Deploy (sets up project on first run)
-vercel
-
-# Production deployment
 vercel --prod
 ```
 
-Add the same environment variables in Vercel's dashboard under Settings > Environment Variables.
-
 ## Testnet Deployment
 
-All three contracts are deployed to testnet at:
+All three contracts are live on Flow testnet:
 
 ```
-Account: 0x4648c731f1777d9d
+Account:   0x4648c731f1777d9d
 Contracts: ChamaCircle, ChamaScheduler, ChamaManager
+Explorer:  https://testnet.flowscan.io/account/0x4648c731f1777d9d
 ```
 
-## How the Payout Works
+## Try It Yourself
 
-Payouts are **contribution-driven**, not deadline-driven. Each cycle waits for all members to contribute before executing:
+1. Go to **[chama-eosin.vercel.app](https://chama-eosin.vercel.app)**
+2. Sign in with your email (no wallet needed)
+3. Create a circle — set contribution amount, cycle duration, and member count
+4. Share the circle ID with friends (or use Gmail's `+` trick: `you+test1@gmail.com`, `you+test2@gmail.com`)
+5. Each member joins by paying a security deposit
+6. Circle seals when all slots fill
+7. Everyone contributes each cycle → payout auto-executes to the next recipient
+8. After all cycles complete, deposits are returned
 
-1. **Contribute** — Each member sends their contribution (e.g., 100 FLOW)
-2. **Auto-execute** — When ALL members have contributed, the payout fires automatically
-3. **Penalize** — If someone doesn't contribute within the grace period (3x cycle duration), any member can force-execute, penalizing non-payers
-4. **Identify recipient** — Rotation by join order: cycle 1 → member 1, cycle 2 → member 2, etc.
-5. **Transfer pool** — Entire pool (contributions + penalties) sent to recipient's Flow account
-6. **Notify** — Toast notification + payout history entry with Flowscan link
-7. **Reset** — Contribution flags cleared, next cycle begins
-8. **Complete or continue** — If all cycles done, return deposits. Otherwise, wait for next round.
-
-The `executeCycle()` function is `access(all)` — anyone can call it. The smart contract enforces all rules regardless of who triggers it.
-
-## Testing with Multiple Accounts
-
-To test the full chama flow, you need multiple Flow accounts (one per member):
-
-1. Sign in with different email addresses (each gets a unique Flow account via Magic.link)
-2. Fund each account with testnet FLOW at https://faucet.flow.com
-3. Create a circle with one account, join with the others
-4. Each member contributes → payout auto-executes
-
-Tip: Use Gmail's `+` trick — `you+test1@gmail.com`, `you+test2@gmail.com`, etc. all route to the same inbox but create separate Flow accounts.
+**That's it. No MetaMask. No gas fees. No crypto jargon. Just savings.**
 
 ## License
 
