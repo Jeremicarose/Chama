@@ -80,7 +80,7 @@ const EVENT_TO_ACTION: Record<string, string> = {
 // Key: circleId or "all:{ids}", Value: { data, timestamp }
 // TTL: 60 seconds — events only change when a new transaction is confirmed
 
-const CACHE_TTL_MS = 60_000;
+const CACHE_TTL_MS = 300_000; // 5 minutes — events only change on new transactions
 const cache = new Map<string, { data: CircleActivity[]; timestamp: number }>();
 
 function getCached(key: string): CircleActivity[] | null {
@@ -253,9 +253,9 @@ export async function fetchCircleEvents(circleId: string): Promise<CircleActivit
 
   const latestHeight = await getLatestBlockHeight();
 
-  // Search the last 10,000 blocks (~1.5 days on testnet)
-  // Reduced from 50,000 to cut API requests by 80%
-  const searchDepth = 10000;
+  // Search the last 2,000 blocks (~6 hours on testnet)
+  // Keeps API requests manageable: 10 types × 8 chunks = 80 calls
+  const searchDepth = 2000;
   const startHeight = Math.max(0, latestHeight - searchDepth);
 
   const allEvents = await fetchAllEventsInRange(startHeight, latestHeight);
@@ -295,7 +295,7 @@ export async function fetchAllCircleEvents(circleIds: string[]): Promise<Record<
   }
 
   const latestHeight = await getLatestBlockHeight();
-  const searchDepth = 10000;
+  const searchDepth = 2000;
   const startHeight = Math.max(0, latestHeight - searchDepth);
 
   const allEvents = await fetchAllEventsInRange(startHeight, latestHeight);

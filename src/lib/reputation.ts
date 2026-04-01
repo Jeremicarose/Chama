@@ -128,7 +128,7 @@ export function getGrade(score: number): { label: string; color: string } {
 
 // Simple in-memory cache to avoid repeated queries within 60 seconds
 const scoreCache = new Map<string, { score: ReputationScore; timestamp: number }>();
-const CACHE_TTL = 60_000; // 60 seconds
+const CACHE_TTL = 300_000; // 5 minutes — reputation doesn't change often
 
 export async function computeReputation(address: string): Promise<ReputationScore> {
   // Check cache first

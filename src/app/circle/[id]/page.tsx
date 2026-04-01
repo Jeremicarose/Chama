@@ -17,8 +17,7 @@ import { PotGrowth } from '@/components/PotGrowth';
 import { recordReceiptClient } from '@/lib/receipt-client';
 import { fetchCircleEvents, type CircleActivity } from '@/lib/flow-events';
 import { computeReputation } from '@/lib/reputation';
-import { checkAchievements, type AchievementStatus } from '@/lib/achievements';
-import { MiniBadge } from '@/components/AchievementBadge';
+// achievements used on dashboard, not here
 import { fmtFlow, useFlowPrice } from '@/lib/currency';
 
 // =============================================================================
@@ -107,99 +106,6 @@ transaction(hostAddress: Address, circleId: UInt64) {
 }
 `;
 
-// Called by the HOST after the circle seals (all members joined, status = ACTIVE)
-// Creates the scheduler handler with a pre-authorized capability to the circle
-const INIT_HANDLER_TX = `
-import ChamaCircle from 0xChamaCircle
-import ChamaScheduler from 0xChamaScheduler
-import FlowTransactionScheduler from 0xFlowTransactionScheduler
-
-transaction(circleId: UInt64) {
-    prepare(signer: auth(Storage, Capabilities) &Account) {
-        let circlePath = StoragePath(identifier: "chamaCircle_".concat(circleId.toString()))
-            ?? panic("Could not create circle storage path")
-        let handlerPath = StoragePath(identifier: "chamaHandler_".concat(circleId.toString()))
-            ?? panic("Could not create handler storage path")
-        let handlerPublicPath = PublicPath(identifier: "chamaHandler_".concat(circleId.toString()))
-            ?? panic("Could not create handler public path")
-
-        if signer.storage.borrow<&AnyResource>(from: handlerPath) != nil {
-            return
-        }
-
-        let circleCap = signer.capabilities.storage
-            .issue<&ChamaCircle.Circle>(circlePath)
-        let handler <- ChamaScheduler.createHandler(
-            circleCap: circleCap,
-            storagePath: handlerPath,
-            publicPath: handlerPublicPath
-        )
-        signer.storage.save(<- handler, to: handlerPath)
-
-        let _ = signer.capabilities.storage
-            .issue<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}>(handlerPath)
-        let publicCap = signer.capabilities.storage
-            .issue<&{FlowTransactionScheduler.TransactionHandler}>(handlerPath)
-        signer.capabilities.publish(publicCap, at: handlerPublicPath)
-    }
-}
-`;
-
-// Called after InitHandler and after each cycle to schedule the next on-chain execution
-const SCHEDULE_NEXT_CYCLE_TX = `
-import FlowTransactionScheduler from 0xFlowTransactionScheduler
-import ChamaScheduler from 0xChamaScheduler
-import ChamaCircle from 0xChamaCircle
-import FlowToken from 0xFlowToken
-import FungibleToken from 0xFungibleToken
-
-transaction(circleId: UInt64, cycleDuration: UFix64) {
-    prepare(signer: auth(Storage, Capabilities) &Account) {
-        let circlePath = StoragePath(identifier: "chamaCircle_".concat(circleId.toString()))
-            ?? panic("Could not create circle storage path")
-        let handlerPath = StoragePath(identifier: "chamaHandler_".concat(circleId.toString()))
-            ?? panic("Could not create handler storage path")
-
-        let circleRef = signer.storage.borrow<&ChamaCircle.Circle>(from: circlePath)
-            ?? panic("Could not borrow circle")
-        let state = circleRef.getState()
-        if state.status != ChamaCircle.CircleStatus.ACTIVE {
-            return
-        }
-
-        let handlerCap = signer.capabilities.storage
-            .issue<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}>(handlerPath)
-        let targetTimestamp = getCurrentBlock().timestamp + cycleDuration
-        let estimate = FlowTransactionScheduler.estimate(
-            data: nil,
-            timestamp: targetTimestamp,
-            priority: FlowTransactionScheduler.Priority.Medium,
-            executionEffort: 5000
-        )
-        let feeAmount = estimate.flowFee ?? 0.001
-        let vaultRef = signer.storage
-            .borrow<auth(FungibleToken.Withdraw) &FlowToken.Vault>(from: /storage/flowTokenVault)
-            ?? panic("Could not borrow FlowToken vault for fee")
-        let fees <- vaultRef.withdraw(amount: feeAmount) as! @FlowToken.Vault
-
-        let scheduledTx <- FlowTransactionScheduler.schedule(
-            handlerCap: handlerCap,
-            data: nil,
-            timestamp: targetTimestamp,
-            priority: FlowTransactionScheduler.Priority.Medium,
-            executionEffort: 5000,
-            fees: <- fees
-        )
-
-        let scheduledTxPath = StoragePath(identifier: "chamaScheduledTx_".concat(circleId.toString()))
-            ?? panic("Could not create scheduled tx path")
-        if let oldTx <- signer.storage.load<@FlowTransactionScheduler.ScheduledTransaction>(from: scheduledTxPath) {
-            destroy oldTx
-        }
-        signer.storage.save(<- scheduledTx, to: scheduledTxPath)
-    }
-}
-`;
 
 const EXECUTE_CYCLE_TX = `
 import ChamaCircle from 0xChamaCircle
@@ -351,16 +257,6 @@ function MemberRow({
   isYou: boolean;
   isActive: boolean;
 }) {
-  // Compute achievements for this member (uses cached reputation data)
-  const [badges, setBadges] = useState<AchievementStatus[]>([]);
-  useEffect(() => {
-    computeReputation(member.address)
-      .then((score) => {
-        const unlocked = checkAchievements(score).filter((a) => a.unlocked);
-        setBadges(unlocked.slice(0, 3)); // Show top 3 badges
-      })
-      .catch(() => {});
-  }, [member.address]);
 
   return (
     <div className={`flex items-center justify-between px-4 py-3 transition-colors ${isYou ? 'bg-emerald-500/[0.03]' : ''}`}>
@@ -378,14 +274,6 @@ function MemberRow({
             {isYou && (
               <span className="rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
                 You
-              </span>
-            )}
-            {/* Mini achievement badges — top 3 unlocked */}
-            {badges.length > 0 && (
-              <span className="flex items-center gap-0.5">
-                {badges.map((b) => (
-                  <MiniBadge key={b.id} achievement={b} />
-                ))}
               </span>
             )}
           </p>
@@ -506,87 +394,62 @@ export default function CircleDetailPage() {
     return () => { cancelled = true; };
   }, [circleId, circle?.currentCycle]); // refetch when cycle advances
 
-  // ── Auto-execute cycle when ALL members have contributed ──
+  // ── Derived contribution state ──
   const allContributed = circle?.members?.length
     ? circle.members.every((m) => m.hasContributed)
     : false;
   const contributedCount = circle?.members?.filter((m) => m.hasContributed).length ?? 0;
 
+  // ── Auto-execute cycle at deadline time ──
+  // Payouts happen on schedule (at the deadline), NOT immediately when all contribute.
+  // This gives every member the full cycle window to contribute.
+  // The execute fires when: (1) deadline has passed AND (2) all members contributed.
+  // If the deadline passes and some members haven't contributed, the manual
+  // "force execute" button appears after a grace period to penalize non-payers.
   useEffect(() => {
     if (!circle || !hostAddress || !user.loggedIn) return;
     if (circle.status.rawValue !== '1') return; // only when Active
     if (autoExecuting || actionLoading) return;
-    if (!allContributed) return; // wait until everyone has paid
 
-    // All members contributed — auto-trigger executeCycle
+    const deadline = parseFloat(circle.nextDeadline);
+    if (deadline <= 0) return;
+
+    const now = Date.now() / 1000;
+
+    // If deadline hasn't passed yet, schedule execution for when it does
+    if (now < deadline) {
+      // Only schedule if all have already contributed (they're just waiting for the clock)
+      if (!allContributed) return;
+
+      const delayMs = (deadline - now) * 1000;
+      const timer = setTimeout(() => {
+        // Re-check conditions at execution time
+        setAutoExecuting(true);
+        executePayoutCycle();
+      }, delayMs);
+
+      return () => clearTimeout(timer);
+    }
+
+    // Deadline has passed — execute if all contributed
+    if (!allContributed) return;
+
     setAutoExecuting(true);
-    (async () => {
-      try {
-        // Capture payout details BEFORE executing (state will change after)
-        const payoutRecipient = circle.nextRecipient || 'unknown';
-        const payoutAmt = String(parseFloat(circle.config.contributionAmount) * parseInt(circle.config.maxMembers));
-        const payoutCycle = circle.currentCycle;
+    executePayoutCycle();
+  }, [circle?.nextDeadline, circle?.currentCycle, hostAddress, user.loggedIn, autoExecuting, actionLoading, allContributed]); // eslint-disable-line react-hooks/exhaustive-deps
 
-        showToast({ status: 'pending', message: 'All members contributed — executing payout...' });
-        const txId = await sponsoredMutate({
-          cadence: EXECUTE_CYCLE_TX,
-          args: (arg: any, t: any) => [arg(hostAddress, t.Address), arg(circleId, t.UInt64)],
-          limit: 9999,
-        });
-        showToast({ status: 'sealing', message: 'Executing payout — confirming on-chain...', txId });
-        await fcl.tx(txId).onceSealed();
-
-        // Show payout-specific toast
-        const isYouRecipient = payoutRecipient === user.addr;
-        const toastMsg = isYouRecipient
-          ? `You received ${fmtFlow(payoutAmt)} FLOW! (Cycle ${payoutCycle})`
-          : `${fmtFlow(payoutAmt)} FLOW sent to ${truncAddr(payoutRecipient)} (Cycle ${payoutCycle})`;
-        showToast({ status: 'sealed', message: toastMsg, txId });
-
-        setLastPayout({ recipient: payoutRecipient, amount: payoutAmt, cycle: payoutCycle, txId });
-        setCycleJustExecuted(true);
-        setTimeout(() => setCycleJustExecuted(false), 10000);
-
-        // Fire-and-forget: record payout receipt
-        if (hostAddress && user.addr && circle) {
-          recordReceiptClient({
-            circleId,
-            action: 'payout_executed',
-            actor: user.addr,
-            timestamp: new Date().toISOString(),
-            details: {
-              cycle: parseInt(circle.currentCycle),
-              recipient: circle.nextRecipient || 'unknown',
-              amount: String(parseFloat(circle.config.contributionAmount) * parseInt(circle.config.maxMembers)),
-              autoExecuted: true,
-            },
-            transactionId: txId,
-            previousReceiptCID: circle.latestReceiptCID || null,
-          }).catch(console.warn);
-        }
-
-        await fetchCircle();
-      } catch (err: any) {
-        console.warn('Auto-execute cycle failed:', err?.message);
-        await fetchCircle();
-      } finally {
-        setAutoExecuting(false);
-      }
-    })();
-  }, [circle, hostAddress, user.loggedIn, autoExecuting, actionLoading, allContributed]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Actions ──
-  async function handleExecuteCycle() {
-    if (!hostAddress || !circle) return;
-    setActionLoading(true);
-    setError(null);
+  // Shared payout execution logic (used by auto-execute and manual execute)
+  async function executePayoutCycle() {
+    if (!hostAddress || !circle) {
+      setAutoExecuting(false);
+      return;
+    }
     try {
-      // Capture payout details BEFORE executing
       const payoutRecipient = circle.nextRecipient || 'unknown';
       const payoutAmt = String(parseFloat(circle.config.contributionAmount) * parseInt(circle.config.maxMembers));
       const payoutCycle = circle.currentCycle;
 
-      showToast({ status: 'pending', message: 'Executing payout — please confirm...' });
+      showToast({ status: 'pending', message: 'Deadline reached — executing payout...' });
       const txId = await sponsoredMutate({
         cadence: EXECUTE_CYCLE_TX,
         args: (arg: any, t: any) => [arg(hostAddress, t.Address), arg(circleId, t.UInt64)],
@@ -605,7 +468,6 @@ export default function CircleDetailPage() {
       setCycleJustExecuted(true);
       setTimeout(() => setCycleJustExecuted(false), 10000);
 
-      // Fire-and-forget: record payout receipt to IPFS + on-chain
       if (hostAddress && user.addr && circle) {
         recordReceiptClient({
           circleId,
@@ -615,7 +477,8 @@ export default function CircleDetailPage() {
           details: {
             cycle: parseInt(circle.currentCycle),
             recipient: circle.nextRecipient || 'unknown',
-            amount: String(parseFloat(circle.config.contributionAmount) * parseInt(circle.config.maxMembers)),
+            amount: payoutAmt,
+            autoExecuted: true,
           },
           transactionId: txId,
           previousReceiptCID: circle.latestReceiptCID || null,
@@ -623,6 +486,21 @@ export default function CircleDetailPage() {
       }
 
       await fetchCircle();
+    } catch (err: any) {
+      console.warn('Auto-execute cycle failed:', err?.message);
+      await fetchCircle();
+    } finally {
+      setAutoExecuting(false);
+    }
+  }
+
+  // ── Actions ──
+  async function handleExecuteCycle() {
+    if (!hostAddress || !circle) return;
+    setActionLoading(true);
+    setError(null);
+    try {
+      await executePayoutCycle();
     } catch (err: any) {
       showToast({ status: 'error', message: err?.message || 'Execute cycle failed.' });
       setError(err?.message || 'Execute cycle failed.');
@@ -672,34 +550,6 @@ export default function CircleDetailPage() {
     }
   }
 
-  async function initScheduler(state: CircleData) {
-    try {
-      showToast({ status: 'pending', message: 'Setting up automatic payouts...' });
-      // Step 1: Init handler
-      const initTxId = await sponsoredMutate({
-        cadence: INIT_HANDLER_TX,
-        args: (arg: any, t: any) => [arg(circleId, t.UInt64)],
-        limit: 9999,
-      });
-      await fcl.tx(initTxId).onceSealed();
-
-      // Step 2: Schedule next cycle
-      const cycleDuration = state.config.cycleDuration;
-      const scheduleTxId = await sponsoredMutate({
-        cadence: SCHEDULE_NEXT_CYCLE_TX,
-        args: (arg: any, t: any) => [
-          arg(circleId, t.UInt64),
-          arg(cycleDuration, t.UFix64),
-        ],
-        limit: 9999,
-      });
-      await fcl.tx(scheduleTxId).onceSealed();
-      showToast({ status: 'sealed', message: 'Automatic payouts scheduled!', txId: scheduleTxId });
-    } catch (err: any) {
-      // Non-fatal — frontend auto-execute is the fallback
-      console.warn('Scheduler init failed (fallback to frontend auto-execute):', err?.message);
-    }
-  }
 
   async function handleContribute() {
     if (!hostAddress) return;
@@ -869,9 +719,9 @@ export default function CircleDetailPage() {
         <StatCard label="Cycle" value={`${circle.currentCycle} / ${circle.config.maxMembers}`} />
         <StatCard
           label="Next Payout"
-          value={isActive ? (allContributed ? 'Executing...' : (countdown === 'EXPIRED' ? 'Waiting...' : countdown)) : '--'}
-          accent={isActive && (countdown === 'EXPIRED' || allContributed)}
-          hint={isActive && countdown === 'EXPIRED' && !allContributed ? `${contributedCount}/${memberCount} contributed` : undefined}
+          value={isActive ? (countdown === 'EXPIRED' ? (allContributed ? 'Ready' : 'Waiting...') : countdown) : '--'}
+          accent={isActive && countdown === 'EXPIRED'}
+          hint={isActive && countdown !== 'EXPIRED' && allContributed ? 'All contributed' : isActive && countdown === 'EXPIRED' && !allContributed ? `${contributedCount}/${memberCount} contributed` : undefined}
         />
       </div>
 
@@ -1004,17 +854,25 @@ export default function CircleDetailPage() {
         {isActive && autoExecuting && (
           <div className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] py-4 text-sm font-medium text-emerald-400">
             <span className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-400" />
-            All members contributed — executing payout...
+            Executing payout...
           </div>
         )}
 
-        {/* All contributed, waiting for auto-execute to kick in */}
-        {isActive && allContributed && !autoExecuting && !cycleJustExecuted && (
+        {/* All contributed, waiting for deadline to trigger payout */}
+        {isActive && allContributed && !autoExecuting && !cycleJustExecuted && countdown !== 'EXPIRED' && (
           <div className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] py-4 text-sm font-medium text-emerald-400">
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
             </svg>
-            All members contributed — payout will execute automatically
+            All members contributed — payout will execute at deadline
+          </div>
+        )}
+
+        {/* All contributed and deadline passed — executing soon */}
+        {isActive && allContributed && !autoExecuting && !cycleJustExecuted && countdown === 'EXPIRED' && (
+          <div className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] py-4 text-sm font-medium text-emerald-400">
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-400" />
+            Deadline reached — executing payout...
           </div>
         )}
 
