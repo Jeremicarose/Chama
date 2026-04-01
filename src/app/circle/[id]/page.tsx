@@ -662,15 +662,8 @@ export default function CircleDetailPage() {
         }).catch(console.warn);
       }
 
-      // If this join sealed the circle and user is the host, init the on-chain scheduler
       // Re-fetch to get latest state after join
-      const freshState: CircleData = await fcl.query({
-        cadence: GET_CIRCLE_STATE_SCRIPT,
-        args: (arg: any, t: any) => [arg(hostAddress, t.Address), arg(circleId, t.UInt64)],
-      });
-      if (freshState.status.rawValue === '1' && user.addr === hostAddress) {
-        await initScheduler(freshState);
-      }
+      await fetchCircle();
     } catch (err: any) {
       showToast({ status: 'error', message: err?.message || 'Join failed.' });
       setError(err?.message || 'Join failed.');
@@ -876,8 +869,9 @@ export default function CircleDetailPage() {
         <StatCard label="Cycle" value={`${circle.currentCycle} / ${circle.config.maxMembers}`} />
         <StatCard
           label="Next Payout"
-          value={isActive ? (countdown === 'EXPIRED' ? 'Executing...' : countdown) : '--'}
-          accent={isActive && countdown === 'EXPIRED'}
+          value={isActive ? (allContributed ? 'Executing...' : (countdown === 'EXPIRED' ? 'Waiting...' : countdown)) : '--'}
+          accent={isActive && (countdown === 'EXPIRED' || allContributed)}
+          hint={isActive && countdown === 'EXPIRED' && !allContributed ? `${contributedCount}/${memberCount} contributed` : undefined}
         />
       </div>
 
@@ -986,15 +980,23 @@ export default function CircleDetailPage() {
                 You've contributed — waiting for others
               </p>
             )}
-            {countdown === 'EXPIRED' && !allContributed && user.loggedIn && (
-              <button
-                onClick={handleExecuteCycle}
-                disabled={actionLoading || autoExecuting}
-                className="mt-3 w-full rounded-xl bg-amber-600 py-2.5 text-xs font-semibold text-white transition-all hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {actionLoading ? 'Executing...' : 'Execute cycle — deadline passed'}
-              </button>
-            )}
+            {/* Manual execute: only after 3x cycle duration grace period */}
+            {(() => {
+              if (!circle || countdown !== 'EXPIRED' || allContributed || !user.loggedIn) return null;
+              const deadline = parseFloat(circle.nextDeadline);
+              const grace = parseFloat(circle.config.cycleDuration) * 3;
+              const now = Date.now() / 1000;
+              if (now < deadline + grace) return null;
+              return (
+                <button
+                  onClick={handleExecuteCycle}
+                  disabled={actionLoading || autoExecuting}
+                  className="mt-3 w-full rounded-xl bg-red-600/80 py-2.5 text-xs font-semibold text-white transition-all hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {actionLoading ? 'Executing...' : 'Force execute — penalize non-payers'}
+                </button>
+              );
+            })()}
           </div>
         )}
 
