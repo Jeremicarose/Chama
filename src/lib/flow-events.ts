@@ -15,14 +15,10 @@
 //   block height (newest first). Each event includes the block height and
 //   transaction ID for linking to Flowscan.
 //
-// WHY NOT FCL EVENTS?
-//   FCL's event subscription is designed for real-time streaming, not historical
-//   queries. The REST API is simpler for fetching past events in bulk.
-//
-// LIMITATIONS:
-//   - Flow REST API limits range queries to 250 blocks
-//   - We work around this by fetrying from latest block backward in chunks
-//   - For hackathon purposes, we fetch the last ~50,000 blocks (~7 days)
+// RATE LIMITING:
+//   Flow's REST API returns 429 when too many requests are sent. We handle
+//   this with: in-memory cache (60s TTL), retry with exponential backoff,
+//   sequential fetching per event type, and reduced search depth (10,000 blocks).
 // =============================================================================
 
 const CONTRACT_ADDRESS = '4648c731f1777d9d'; // testnet (no 0x prefix for API)
@@ -79,22 +75,60 @@ const EVENT_TO_ACTION: Record<string, string> = {
 };
 
 // =============================================================================
-// Core Fetch
+// In-Memory Cache — prevents re-fetching the same events on every poll
+// =============================================================================
+// Key: circleId or "all:{ids}", Value: { data, timestamp }
+// TTL: 60 seconds — events only change when a new transaction is confirmed
+
+const CACHE_TTL_MS = 60_000;
+const cache = new Map<string, { data: CircleActivity[]; timestamp: number }>();
+
+function getCached(key: string): CircleActivity[] | null {
+  const entry = cache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
+    cache.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCache(key: string, data: CircleActivity[]) {
+  cache.set(key, { data, timestamp: Date.now() });
+}
+
+// =============================================================================
+// Core Fetch with Retry
 // =============================================================================
 
 /**
  * Fetches the latest block height from Flow's REST API.
+ * Retries up to 3 times on 429 with exponential backoff.
  */
 async function getLatestBlockHeight(): Promise<number> {
-  const res = await fetch(`${ACCESS_NODE}/v1/blocks?height=sealed&expand=`);
-  if (!res.ok) throw new Error(`Failed to fetch latest block: ${res.status}`);
-  const blocks = await res.json();
-  return blocks[0]?.header?.height || 0;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await fetch(`${ACCESS_NODE}/v1/blocks?height=sealed&expand=`);
+    if (res.ok) {
+      const blocks = await res.json();
+      return blocks[0]?.header?.height || 0;
+    }
+    if (res.status === 429) {
+      await sleep(1000 * Math.pow(2, attempt));
+      continue;
+    }
+    throw new Error(`Failed to fetch latest block: ${res.status}`);
+  }
+  throw new Error('Failed to fetch latest block after retries (rate limited)');
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
  * Fetches events of a specific type within a block range.
  * Flow REST API limits to 250 blocks per request.
+ * Retries on 429 with exponential backoff.
  */
 async function fetchEventsInRange(
   eventType: string,
@@ -104,31 +138,35 @@ async function fetchEventsInRange(
   const fullType = `A.${CONTRACT_ADDRESS}.ChamaCircle.${eventType}`;
   const url = `${ACCESS_NODE}/v1/events?type=${fullType}&start_height=${startHeight}&end_height=${endHeight}`;
 
-  const res = await fetch(url);
-  if (!res.ok) {
-    if (res.status === 400) return []; // Range too old or invalid
-    throw new Error(`Event fetch failed: ${res.status}`);
-  }
-
-  const data = await res.json();
-  const events: FlowEvent[] = [];
-
-  // Response is array of { block_height, block_timestamp, events: [...] }
-  for (const block of data) {
-    for (const evt of block.events || []) {
-      events.push({
-        type: eventType,
-        transactionId: evt.transaction_id,
-        blockHeight: parseInt(block.block_height),
-        blockTimestamp: block.block_timestamp,
-        data: evt.payload?.value?.value
-          ? parseEventPayload(evt.payload)
-          : {},
-      });
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await fetch(url);
+    if (res.ok) {
+      const data = await res.json();
+      const events: FlowEvent[] = [];
+      for (const block of data) {
+        for (const evt of block.events || []) {
+          events.push({
+            type: eventType,
+            transactionId: evt.transaction_id,
+            blockHeight: parseInt(block.block_height),
+            blockTimestamp: block.block_timestamp,
+            data: evt.payload?.value?.value
+              ? parseEventPayload(evt.payload)
+              : {},
+          });
+        }
+      }
+      return events;
     }
+    if (res.status === 400) return []; // Range too old or invalid
+    if (res.status === 429) {
+      await sleep(500 * Math.pow(2, attempt));
+      continue;
+    }
+    // Other errors — skip this chunk
+    return [];
   }
-
-  return events;
+  return []; // All retries exhausted
 }
 
 /**
@@ -163,48 +201,64 @@ function parseEventPayload(payload: any): Record<string, unknown> {
 }
 
 // =============================================================================
+// Internal: fetch all events across types for a block range
+// =============================================================================
+
+/**
+ * Fetches all event types sequentially (not in parallel) to avoid rate limits.
+ * Within each event type, chunks are fetched sequentially with a small delay.
+ */
+async function fetchAllEventsInRange(
+  startHeight: number,
+  endHeight: number,
+): Promise<FlowEvent[]> {
+  const chunkSize = 250;
+  const allEvents: FlowEvent[] = [];
+
+  for (const eventType of EVENT_TYPES) {
+    for (let h = startHeight; h <= endHeight; h += chunkSize) {
+      const end = Math.min(h + chunkSize - 1, endHeight);
+      try {
+        const chunk = await fetchEventsInRange(eventType, h, end);
+        allEvents.push(...chunk);
+      } catch {
+        // Skip failed chunks silently
+      }
+    }
+    // Small delay between event types to stay under rate limits
+    await sleep(100);
+  }
+
+  return allEvents;
+}
+
+// =============================================================================
 // Public API
 // =============================================================================
 
 /**
  * Fetches all ChamaCircle events for a specific circleId.
  *
- * Queries the last ~50,000 blocks (roughly 7 days on Flow testnet) across
- * all event types, filters by circleId, and returns sorted newest-first.
+ * Uses a 60s in-memory cache to avoid hammering the Flow REST API.
+ * Queries the last ~10,000 blocks (~1.5 days on Flow testnet).
+ * Fetches event types sequentially with delays to respect rate limits.
  *
  * @param circleId - The circle ID to filter events for
  * @returns Array of CircleActivity sorted by block height descending
  */
 export async function fetchCircleEvents(circleId: string): Promise<CircleActivity[]> {
+  // Check cache first
+  const cached = getCached(`circle:${circleId}`);
+  if (cached) return cached;
+
   const latestHeight = await getLatestBlockHeight();
 
-  // Search the last 50,000 blocks (~7 days on testnet)
-  const searchDepth = 50000;
+  // Search the last 10,000 blocks (~1.5 days on testnet)
+  // Reduced from 50,000 to cut API requests by 80%
+  const searchDepth = 10000;
   const startHeight = Math.max(0, latestHeight - searchDepth);
 
-  // Fetch all event types in parallel, chunked into 250-block ranges
-  const chunkSize = 250;
-  const allEvents: FlowEvent[] = [];
-
-  // For each event type, fetch in chunks
-  const fetchPromises = EVENT_TYPES.map(async (eventType) => {
-    const events: FlowEvent[] = [];
-    for (let h = startHeight; h <= latestHeight; h += chunkSize) {
-      const end = Math.min(h + chunkSize - 1, latestHeight);
-      try {
-        const chunk = await fetchEventsInRange(eventType, h, end);
-        events.push(...chunk);
-      } catch {
-        // Skip failed chunks silently
-      }
-    }
-    return events;
-  });
-
-  const results = await Promise.all(fetchPromises);
-  for (const events of results) {
-    allEvents.push(...events);
-  }
+  const allEvents = await fetchAllEventsInRange(startHeight, latestHeight);
 
   // Filter by circleId and convert to CircleActivity
   const circleEvents = allEvents
@@ -218,6 +272,7 @@ export async function fetchCircleEvents(circleId: string): Promise<CircleActivit
     }))
     .sort((a, b) => b.blockHeight - a.blockHeight); // Newest first
 
+  setCache(`circle:${circleId}`, circleEvents);
   return circleEvents;
 }
 
@@ -226,31 +281,24 @@ export async function fetchCircleEvents(circleId: string): Promise<CircleActivit
  * Returns events grouped by circleId.
  */
 export async function fetchAllCircleEvents(circleIds: string[]): Promise<Record<string, CircleActivity[]>> {
-  const latestHeight = await getLatestBlockHeight();
-  const searchDepth = 50000;
-  const startHeight = Math.max(0, latestHeight - searchDepth);
-  const chunkSize = 250;
-
-  const allEvents: FlowEvent[] = [];
-
-  const fetchPromises = EVENT_TYPES.map(async (eventType) => {
-    const events: FlowEvent[] = [];
-    for (let h = startHeight; h <= latestHeight; h += chunkSize) {
-      const end = Math.min(h + chunkSize - 1, latestHeight);
-      try {
-        const chunk = await fetchEventsInRange(eventType, h, end);
-        events.push(...chunk);
-      } catch {
-        // Skip failed chunks
-      }
+  const cacheKey = `all:${circleIds.sort().join(',')}`;
+  const cachedRaw = getCached(cacheKey);
+  if (cachedRaw) {
+    // Reconstruct grouped format from flat cache
+    const grouped: Record<string, CircleActivity[]> = {};
+    for (const id of circleIds) grouped[id] = [];
+    for (const evt of cachedRaw) {
+      const cid = String(evt.data.circleId);
+      if (grouped[cid]) grouped[cid].push(evt);
     }
-    return events;
-  });
-
-  const results = await Promise.all(fetchPromises);
-  for (const events of results) {
-    allEvents.push(...events);
+    return grouped;
   }
+
+  const latestHeight = await getLatestBlockHeight();
+  const searchDepth = 10000;
+  const startHeight = Math.max(0, latestHeight - searchDepth);
+
+  const allEvents = await fetchAllEventsInRange(startHeight, latestHeight);
 
   // Group by circleId
   const grouped: Record<string, CircleActivity[]> = {};
@@ -276,6 +324,10 @@ export async function fetchAllCircleEvents(circleIds: string[]): Promise<Record<
   for (const id of Object.keys(grouped)) {
     grouped[id].sort((a, b) => b.blockHeight - a.blockHeight);
   }
+
+  // Cache as flat array for reuse
+  const flat = Object.values(grouped).flat();
+  setCache(cacheKey, flat);
 
   return grouped;
 }

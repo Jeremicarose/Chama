@@ -488,7 +488,7 @@ export default function CircleDetailPage() {
 
   useEffect(() => {
     fetchCircle();
-    const interval = setInterval(fetchCircle, 10000);
+    const interval = setInterval(fetchCircle, 30000);
     return () => clearInterval(interval);
   }, [fetchCircle]);
 
