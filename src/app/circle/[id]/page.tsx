@@ -4,7 +4,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -400,43 +400,24 @@ export default function CircleDetailPage() {
     : false;
   const contributedCount = circle?.members?.filter((m) => m.hasContributed).length ?? 0;
 
-  // ── Auto-execute cycle at deadline time ──
-  // Payouts happen on schedule (at the deadline), NOT immediately when all contribute.
-  // This gives every member the full cycle window to contribute.
-  // The execute fires when: (1) deadline has passed AND (2) all members contributed.
-  // If the deadline passes and some members haven't contributed, the manual
-  // "force execute" button appears after a grace period to penalize non-payers.
+  // ── Auto-execute payout when ALL members have contributed ──
+  // The payout fires as soon as every member has contributed for this cycle.
+  // This matches the user's expectation: "all contributed → payout happens".
+  // A ref tracks which cycle we already executed to prevent double-fires.
+  const executedCycleRef = React.useRef<string | null>(null);
+
   useEffect(() => {
-    if (!circle || !hostAddress || !user.loggedIn) return;
-    if (circle.status.rawValue !== '1') return; // only when Active
-    if (autoExecuting || actionLoading) return;
-
-    const deadline = parseFloat(circle.nextDeadline);
-    if (deadline <= 0) return;
-
-    const now = Date.now() / 1000;
-
-    // If deadline hasn't passed yet, schedule execution for when it does
-    if (now < deadline) {
-      // Only schedule if all have already contributed (they're just waiting for the clock)
-      if (!allContributed) return;
-
-      const delayMs = (deadline - now) * 1000;
-      const timer = setTimeout(() => {
-        // Re-check conditions at execution time
-        setAutoExecuting(true);
-        executePayoutCycle();
-      }, delayMs);
-
-      return () => clearTimeout(timer);
-    }
-
-    // Deadline has passed — execute if all contributed
     if (!allContributed) return;
+    if (!circle || circle.status.rawValue !== '1') return;
+    if (!hostAddress || !user.loggedIn) return;
+    if (autoExecuting || actionLoading || cycleJustExecuted) return;
+    // Don't re-execute the same cycle
+    if (executedCycleRef.current === circle.currentCycle) return;
 
+    executedCycleRef.current = circle.currentCycle;
     setAutoExecuting(true);
     executePayoutCycle();
-  }, [circle?.nextDeadline, circle?.currentCycle, hostAddress, user.loggedIn, autoExecuting, actionLoading, allContributed]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [allContributed, circle?.currentCycle, circle?.status.rawValue, hostAddress, user.loggedIn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Shared payout execution logic (used by auto-execute and manual execute)
   async function executePayoutCycle() {
@@ -719,9 +700,9 @@ export default function CircleDetailPage() {
         <StatCard label="Cycle" value={`${circle.currentCycle} / ${circle.config.maxMembers}`} />
         <StatCard
           label="Next Payout"
-          value={isActive ? (countdown === 'EXPIRED' ? (allContributed ? 'Ready' : 'Waiting...') : countdown) : '--'}
-          accent={isActive && countdown === 'EXPIRED'}
-          hint={isActive && countdown !== 'EXPIRED' && allContributed ? 'All contributed' : isActive && countdown === 'EXPIRED' && !allContributed ? `${contributedCount}/${memberCount} contributed` : undefined}
+          value={isActive ? (allContributed ? 'Ready' : `${contributedCount}/${memberCount}`) : '--'}
+          accent={isActive && allContributed}
+          hint={isActive ? (allContributed ? 'All contributed — executing' : 'Waiting for contributions') : undefined}
         />
       </div>
 
@@ -858,21 +839,13 @@ export default function CircleDetailPage() {
           </div>
         )}
 
-        {/* All contributed, waiting for deadline to trigger payout */}
-        {isActive && allContributed && !autoExecuting && !cycleJustExecuted && countdown !== 'EXPIRED' && (
+        {/* All contributed — payout executing automatically */}
+        {isActive && allContributed && !autoExecuting && !cycleJustExecuted && (
           <div className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] py-4 text-sm font-medium text-emerald-400">
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
             </svg>
-            All members contributed — payout will execute at deadline
-          </div>
-        )}
-
-        {/* All contributed and deadline passed — executing soon */}
-        {isActive && allContributed && !autoExecuting && !cycleJustExecuted && countdown === 'EXPIRED' && (
-          <div className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] py-4 text-sm font-medium text-emerald-400">
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-400" />
-            Deadline reached — executing payout...
+            All members contributed — executing payout...
           </div>
         )}
 

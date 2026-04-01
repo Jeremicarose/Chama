@@ -2,7 +2,7 @@
   "name": "chama",
   "version": "0.1.0",
   "private": true,
-  "script": {
+  "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
