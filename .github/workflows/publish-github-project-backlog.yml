@@ -1,0 +1,76 @@
+name: Publish GitHub Project Backlog
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_number:
+        description: GitHub Project number
+        required: false
+        type: string
+      mode:
+        description: Publish mode
+        required: false
+        default: issues
+        type: choice
+        options:
+          - issues
+          - drafts
+      backlog_file:
+        description: Backlog JSON path
+        required: false
+        default: project-backlog/issues.json
+        type: string
+  push:
+    branches:
+      - main
+    paths:
+      - project-backlog/issues.json
+      - scripts/publish_github_project_backlog.sh
+      - .github/workflows/publish-github-project-backlog.yml
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: publish-github-project-backlog
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GH_PROJECT_TOKEN }}
+      REPO: ${{ github.repository }}
+      OWNER: ${{ github.repository_owner }}
+      PROJECT_NUMBER: ${{ inputs.project_number || vars.GH_PROJECT_NUMBER }}
+      MODE: ${{ inputs.mode || 'issues' }}
+      BACKLOG_FILE: ${{ inputs.backlog_file || 'project-backlog/issues.json' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate configuration
+        run: |
+          if [[ -z "${GH_TOKEN}" ]]; then
+            echo "Missing GH_PROJECT_TOKEN secret."
+            echo "Create a classic PAT with 'repo' (or 'public_repo') and 'project' scopes,"
+            echo "then store it as repository secret GH_PROJECT_TOKEN."
+            exit 1
+          fi
+
+          if [[ -z "${PROJECT_NUMBER}" ]]; then
+            echo "Missing project number."
+            echo "Set workflow input 'project_number' or repository variable GH_PROJECT_NUMBER."
+            exit 1
+          fi
+
+      - name: Show tool versions
+        run: |
+          gh --version
+          jq --version
+
+      - name: Publish backlog to GitHub Project
+        run: |
+          chmod +x scripts/publish_github_project_backlog.sh
+          ./scripts/publish_github_project_backlog.sh

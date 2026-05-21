@@ -1,0 +1,245 @@
+[
+  {
+    "id": "P0-001",
+    "title": "Fix ESLint 9 configuration",
+    "owner": "Platform Owner",
+    "priority": "P0",
+    "area": "platform",
+    "type": "infra",
+    "body": "Acceptance criteria:\n- `npm run lint` passes locally and in CI.\n- Repo uses a valid `eslint.config.*` flat config.\n- No deprecated lint bootstrap remains."
+  },
+  {
+    "id": "P0-002",
+    "title": "Make production build deterministic",
+    "owner": "Platform Owner",
+    "priority": "P0",
+    "area": "platform",
+    "type": "infra",
+    "body": "Acceptance criteria:\n- `npm run build` succeeds in a clean environment without external font fetch dependency.\n- Font strategy is local or otherwise reproducible in CI.\n- Build steps are documented in README."
+  },
+  {
+    "id": "P0-003",
+    "title": "Add CI pipeline for baseline health",
+    "owner": "Platform Owner",
+    "priority": "P0",
+    "area": "platform",
+    "type": "ops",
+    "body": "Acceptance criteria:\n- CI runs `install`, `lint`, `build`, and selected tests on every PR.\n- Failing checks block merge.\n- CI status is documented."
+  },
+  {
+    "id": "P0-004",
+    "title": "Add environment validation",
+    "owner": "Platform Owner",
+    "priority": "P0",
+    "area": "platform",
+    "type": "infra",
+    "body": "Acceptance criteria:\n- Startup validates required env vars by environment.\n- Missing critical vars fail fast with clear messages.\n- Optional vars degrade gracefully and are documented."
+  },
+  {
+    "id": "P0-005",
+    "title": "Secure ChamaManager registration flow",
+    "owner": "Protocol Owner",
+    "priority": "P0",
+    "area": "protocol",
+    "type": "security",
+    "body": "Acceptance criteria:\n- Arbitrary callers cannot mutate circle registry or member registry.\n- Only approved transaction paths can register circles/members.\n- Contract tests cover unauthorized mutation attempts."
+  },
+  {
+    "id": "P0-006",
+    "title": "Protect /api/sign-as-payer from abuse",
+    "owner": "Platform Owner",
+    "priority": "P0",
+    "area": "platform",
+    "type": "security",
+    "body": "Acceptance criteria:\n- Endpoint requires authenticated or signed request context.\n- Rate limiting and abuse controls are in place.\n- Logs capture request volume, failures, and suspicious usage."
+  },
+  {
+    "id": "P0-007",
+    "title": "Protect /api/receipts from abuse",
+    "owner": "Platform Owner",
+    "priority": "P0",
+    "area": "platform",
+    "type": "security",
+    "body": "Acceptance criteria:\n- Only legitimate app users or signed clients can submit receipts.\n- Invalid or spoofed requests are rejected.\n- Failure and abuse events are logged."
+  },
+  {
+    "id": "P0-008",
+    "title": "Remove frontend as primary payout executor",
+    "owner": "App Owner",
+    "priority": "P0",
+    "area": "app",
+    "type": "ux",
+    "body": "Acceptance criteria:\n- Browser auto-execution is not the core production payout path.\n- UI reflects actual execution model honestly.\n- Fallback/manual execution, if kept, is clearly secondary and controlled."
+  },
+  {
+    "id": "P0-009",
+    "title": "Complete scheduler lifecycle wiring",
+    "owner": "Protocol Owner",
+    "priority": "P0",
+    "area": "protocol",
+    "type": "ops",
+    "body": "Acceptance criteria:\n- Handler initialization, first scheduling, next-cycle scheduling, and completion are fully defined.\n- The product can run a cycle without requiring builder intervention.\n- The implementation path is documented."
+  },
+  {
+    "id": "P0-010",
+    "title": "Add scheduler recovery path",
+    "owner": "Protocol Owner",
+    "priority": "P0",
+    "area": "protocol",
+    "type": "ops",
+    "body": "Acceptance criteria:\n- There is a defined recovery flow for missed or failed scheduling.\n- Operators can detect and recover stuck circles.\n- Tests or runbooks cover recovery."
+  },
+  {
+    "id": "P1-011",
+    "title": "Expand Cadence lifecycle test coverage",
+    "owner": "Protocol Owner",
+    "priority": "P1",
+    "area": "protocol",
+    "type": "testing",
+    "body": "Acceptance criteria:\n- Tests cover create, join, contribute, penalize, execute, complete, and deposit return.\n- Edge cases and invariant checks are covered.\n- Test suite is runnable and documented."
+  },
+  {
+    "id": "P1-012",
+    "title": "Add adversarial contract tests",
+    "owner": "Protocol Owner",
+    "priority": "P1",
+    "area": "protocol",
+    "type": "testing",
+    "body": "Acceptance criteria:\n- Tests cover unauthorized registry mutation, double join, double contribute, invalid execution timing, and bad recovery paths.\n- Expected failures are explicit and documented."
+  },
+  {
+    "id": "P1-013",
+    "title": "Add real multi-user E2E flows",
+    "owner": "App Owner",
+    "priority": "P1",
+    "area": "app",
+    "type": "testing",
+    "body": "Acceptance criteria:\n- E2E covers create, invite/join, contribute, payout, and completion with multiple users.\n- Tests validate behavior, not just page rendering.\n- Critical happy path is stable in CI or staging."
+  },
+  {
+    "id": "P1-014",
+    "title": "Add operator observability",
+    "owner": "Platform Owner",
+    "priority": "P1",
+    "area": "platform",
+    "type": "ops",
+    "body": "Acceptance criteria:\n- There is visibility into payer failures, receipt failures, scheduler state, and core transaction outcomes.\n- Logs are structured and searchable.\n- At least one dashboard or equivalent operational view exists."
+  },
+  {
+    "id": "P1-015",
+    "title": "Decide and unify receipt architecture",
+    "owner": "Product Owner + Protocol Owner",
+    "priority": "P1",
+    "area": "product",
+    "type": "infra",
+    "body": "Acceptance criteria:\n- One canonical receipt strategy is chosen: off-chain only, anchored, or hybrid.\n- Product claims match implementation.\n- Unused/duplicative receipt paths are removed or clearly marked."
+  },
+  {
+    "id": "P1-016",
+    "title": "Improve transaction failure UX",
+    "owner": "App Owner",
+    "priority": "P1",
+    "area": "app",
+    "type": "ux",
+    "body": "Acceptance criteria:\n- Users see actionable errors for auth, gas sponsorship, receipt, and chain failures.\n- Retry and recovery messaging is consistent.\n- No silent critical failures remain in primary flows."
+  },
+  {
+    "id": "P1-017",
+    "title": "Add staging environment and release checklist",
+    "owner": "Platform Owner",
+    "priority": "P1",
+    "area": "platform",
+    "type": "ops",
+    "body": "Acceptance criteria:\n- Staging is separate from local and production.\n- Deploy procedure and rollback steps are documented.\n- Release checklist exists and is used."
+  },
+  {
+    "id": "P1-018",
+    "title": "Add analytics instrumentation",
+    "owner": "Growth Owner",
+    "priority": "P1",
+    "area": "growth",
+    "type": "ops",
+    "body": "Acceptance criteria:\n- Core funnel events are tracked.\n- Dashboard shows onboarding, circle creation, join attempts, and contribution completion.\n- Event naming is documented."
+  },
+  {
+    "id": "P2-019",
+    "title": "Improve onboarding for non-crypto users",
+    "owner": "App Owner",
+    "priority": "P2",
+    "area": "app",
+    "type": "ux",
+    "body": "Acceptance criteria:\n- New users can understand deposit, payout, and contribution obligations without blockchain knowledge.\n- Onboarding copy is plain-language and trustworthy.\n- Drop-off points are reduced in user testing."
+  },
+  {
+    "id": "P2-020",
+    "title": "Add invite/share flow",
+    "owner": "App Owner",
+    "priority": "P2",
+    "area": "app",
+    "type": "ux",
+    "body": "Acceptance criteria:\n- Circle creators can invite others with a clean share flow.\n- Join path is simple on mobile and desktop.\n- Invite acceptance is trackable."
+  },
+  {
+    "id": "P2-021",
+    "title": "Improve trust and reputation UX",
+    "owner": "Product Owner + App Owner",
+    "priority": "P2",
+    "area": "product",
+    "type": "ux",
+    "body": "Acceptance criteria:\n- Users can understand what reputation means and how it is earned.\n- Reputation helps decision-making without over-claiming.\n- UI explains risk clearly."
+  },
+  {
+    "id": "P2-022",
+    "title": "Build lightweight operator/admin console",
+    "owner": "App Owner + Platform Owner",
+    "priority": "P2",
+    "area": "app",
+    "type": "ops",
+    "body": "Acceptance criteria:\n- Operators can inspect circle status, recent failures, and support-critical states.\n- No direct dangerous actions are exposed without controls.\n- Console improves incident response time."
+  },
+  {
+    "id": "P2-023",
+    "title": "Mobile usability pass",
+    "owner": "App Owner",
+    "priority": "P2",
+    "area": "app",
+    "type": "ux",
+    "body": "Acceptance criteria:\n- Core flows are smooth on mobile.\n- Forms, nav, and transaction feedback are readable and usable on small screens.\n- No major overflow or interaction issues remain."
+  },
+  {
+    "id": "P3-024",
+    "title": "Pilot program setup",
+    "owner": "Product Owner + Growth Owner",
+    "priority": "P3",
+    "area": "growth",
+    "type": "ops",
+    "body": "Acceptance criteria:\n- Pilot cohort, user rules, value limits, and success criteria are defined.\n- Feedback collection process is in place.\n- Support ownership is defined."
+  },
+  {
+    "id": "P3-025",
+    "title": "Pricing and sponsorship strategy",
+    "owner": "Product Owner",
+    "priority": "P3",
+    "area": "product",
+    "type": "ops",
+    "body": "Acceptance criteria:\n- There is a written decision on sponsored gas policy.\n- Early pricing hypothesis exists, even if not user-facing yet.\n- Cost envelope is modeled for pilot usage."
+  },
+  {
+    "id": "P3-026",
+    "title": "Mainnet readiness review",
+    "owner": "Protocol Owner + Platform Owner",
+    "priority": "P3",
+    "area": "protocol",
+    "type": "security",
+    "body": "Acceptance criteria:\n- Mainnet blockers are listed explicitly.\n- Contract addresses, infra assumptions, and operational controls are reviewed.\n- Output is a go/no-go recommendation, not just optimism."
+  },
+  {
+    "id": "P3-027",
+    "title": "Market-fit decision memo",
+    "owner": "Product Owner",
+    "priority": "P3",
+    "area": "product",
+    "type": "ops",
+    "body": "Acceptance criteria:\n- Pilot results are summarized with metrics and qualitative findings.\n- Recommendation is explicit: continue, pivot, narrow segment, or reposition as infra.\n- Next-quarter priorities follow from the memo."
+  }
+]
