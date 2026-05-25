@@ -175,25 +175,26 @@ function buildDescription(event: CircleActivity): string {
 
 export function ActivityFeed({ circleId }: { circleId: string }) {
   const [events, setEvents] = useState<CircleActivity[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(Boolean(circleId));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!circleId) return;
 
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-
     fetchCircleEvents(circleId)
       .then((result) => {
-        if (!cancelled) setEvents(result);
+        if (!cancelled) {
+          setEvents(result);
+          setError(null);
+          setLoading(false);
+        }
       })
       .catch((err) => {
-        if (!cancelled) setError(err.message || 'Failed to load events');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setError(err.message || 'Failed to load events');
+          setLoading(false);
+        }
       });
 
     return () => { cancelled = true; };

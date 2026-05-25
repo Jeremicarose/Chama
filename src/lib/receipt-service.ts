@@ -39,6 +39,7 @@ import { StoreMemory } from '@storacha/client/stores/memory';
 import * as Signer from '@ucanto/principal/ed25519';
 import { CarReader } from '@ipld/car';
 import * as Proof from '@storacha/client/proof';
+import { serverEnv } from '@/lib/env';
 
 // =============================================================================
 // Types
@@ -95,9 +96,9 @@ export interface ReceiptData {
  * 5. Set the current space to STORACHA_SPACE_DID
  */
 async function createStorachaClient() {
-  const key = process.env.STORACHA_KEY;
-  const proofStr = process.env.STORACHA_PROOF;
-  const spaceDID = process.env.STORACHA_SPACE_DID;
+  const key = serverEnv.storachaKey;
+  const proofStr = serverEnv.storachaProof;
+  const spaceDID = serverEnv.storachaSpaceDid;
 
   if (!key || !proofStr || !spaceDID) {
     throw new Error(

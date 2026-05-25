@@ -34,20 +34,30 @@ const TIER_ORDER: AchievementTier[] = ['bronze', 'silver', 'gold', 'platinum'];
 export default function AchievementsPage() {
   const { user } = useCurrentUser();
   const [achievements, setAchievements] = useState<AchievementStatus[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(Boolean(user.addr));
 
   useEffect(() => {
-    if (!user.addr) {
-      setLoading(false);
-      return;
-    }
+    if (!user.addr) return;
 
+    let cancelled = false;
     computeReputation(user.addr)
       .then((score) => {
-        setAchievements(checkAchievements(score));
+        if (!cancelled) {
+          setAchievements(checkAchievements(score));
+        }
       })
-      .catch(() => setAchievements([]))
-      .finally(() => setLoading(false));
+      .catch(() => {
+        if (!cancelled) {
+          setAchievements([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => { cancelled = true; };
   }, [user.addr]);
 
   const unlockedCount = achievements.filter((a) => a.unlocked).length;

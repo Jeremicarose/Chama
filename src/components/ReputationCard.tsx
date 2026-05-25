@@ -139,15 +139,26 @@ function PillarBar({ label, value, max }: { label: string; value: number; max: n
 
 export function ReputationCard({ address }: { address: string }) {
   const [score, setScore] = useState<ReputationScore | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(Boolean(address));
 
   useEffect(() => {
     if (!address) return;
-    setLoading(true);
+    let cancelled = false;
     computeReputation(address)
-      .then(setScore)
-      .catch(() => setScore(null))
-      .finally(() => setLoading(false));
+      .then((result) => {
+        if (!cancelled) {
+          setScore(result);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setScore(null);
+          setLoading(false);
+        }
+      });
+
+    return () => { cancelled = true; };
   }, [address]);
 
   if (loading) {

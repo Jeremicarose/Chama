@@ -35,12 +35,13 @@
 
 import { Magic } from 'magic-sdk';
 import { FlowExtension } from '@magic-ext/flow';
+import { publicEnv } from '@/lib/env';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Network Configuration
 // ─────────────────────────────────────────────────────────────────────────────
 
-const FLOW_NETWORK = process.env.NEXT_PUBLIC_FLOW_NETWORK || 'emulator';
+const FLOW_NETWORK = publicEnv.flowNetwork;
 
 const RPC_MAP: Record<string, string> = {
   emulator: 'http://localhost:8888',
@@ -60,11 +61,10 @@ const RPC_MAP: Record<string, string> = {
 // for the Flow blockchain to confirm the account creation transaction.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let magicInstance: any = null;
 
 export function getMagic(): any {
-  const apiKey = process.env.NEXT_PUBLIC_MAGIC_API_KEY;
+  const apiKey = publicEnv.magicApiKey;
   if (!apiKey) {
     console.warn('Magic.link not configured — set NEXT_PUBLIC_MAGIC_API_KEY');
     return null;
@@ -148,6 +148,18 @@ export async function isMagicLoggedIn(): Promise<boolean> {
     return await magic.user.isLoggedIn();
   } catch {
     return false;
+  }
+}
+
+export async function getMagicIdToken(): Promise<string | null> {
+  const magic = getMagic();
+  if (!magic) return null;
+
+  try {
+    return await magic.user.getIdToken();
+  } catch (err) {
+    console.warn('Magic ID token fetch failed:', err);
+    return null;
   }
 }
 

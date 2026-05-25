@@ -32,6 +32,8 @@
 
 'use client';
 
+import { useEffect, useState } from 'react';
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -232,8 +234,14 @@ export function CashFlowTimeline({
 
 function TimelineCard({ event }: { event: TimelineEvent }) {
   const isPayout = event.type === 'payout';
-  const isUrgent = event.timestamp - Date.now() / 1000 < 600; // < 10 min
+  const [now, setNow] = useState(() => Date.now() / 1000);
+  const isUrgent = event.timestamp - now < 600; // < 10 min
   const isYourPayout = isPayout && event.isYou;
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now() / 1000), 60_000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <a

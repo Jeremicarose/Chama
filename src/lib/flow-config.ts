@@ -17,12 +17,13 @@
 // =============================================================================
 
 import * as fcl from '@onflow/fcl';
+import { publicEnv } from '@/lib/env';
 
 // =============================================================================
 // Network Detection
 // =============================================================================
 
-const FLOW_NETWORK = process.env.NEXT_PUBLIC_FLOW_NETWORK || 'emulator';
+const FLOW_NETWORK = publicEnv.flowNetwork;
 
 // =============================================================================
 // Access Node Configuration
@@ -129,7 +130,7 @@ fcl.config()
   //
   // Get a free projectId at: https://cloud.walletconnect.com
   // For development, we use the env var or a placeholder that silences the warning.
-  .put('walletconnect.projectId', process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'development')
+  .put('walletconnect.projectId', publicEnv.walletConnectProjectId || 'development')
   // ─────────────────────────────────────────────────────────────────────────
   // Blocto Wallet — Email-Based Onboarding
   // ─────────────────────────────────────────────────────────────────────────

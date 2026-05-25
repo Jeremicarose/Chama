@@ -17,6 +17,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { publicEnv } from '@/lib/env';
 import { fcl } from '@/lib/flow-config';
 import {
   getMagic,
@@ -52,7 +53,7 @@ export function useCurrentUser() {
   // overwriting Magic state during the async gap between state updates.
   const authMethodRef = useRef<AuthMethod>(null);
 
-  const magicAvailable = typeof window !== 'undefined' && !!process.env.NEXT_PUBLIC_MAGIC_API_KEY;
+  const magicAvailable = typeof window !== 'undefined' && !!publicEnv.magicApiKey;
 
   // Helper to update both state and ref together
   const setAuth = useCallback((method: AuthMethod) => {

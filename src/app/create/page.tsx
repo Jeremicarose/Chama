@@ -20,7 +20,6 @@ import { fmtFlow, useFlowPrice } from '@/lib/currency';
 
 const CREATE_CIRCLE_TX = `
 import ChamaCircle from 0xChamaCircle
-import ChamaManager from 0xChamaManager
 import FungibleToken from 0xFungibleToken
 import FlowToken from 0xFlowToken
 
@@ -53,8 +52,6 @@ transaction(
         let cap = signer.capabilities.storage.issue<&ChamaCircle.Circle>(storagePath)
         signer.capabilities.publish(cap, at: publicPath)
 
-        ChamaManager.registerCircle(circleId: circleId, name: name, host: signer.address)
-
         let circleRef = signer.storage.borrow<&ChamaCircle.Circle>(from: storagePath)
             ?? panic("Could not borrow circle")
 
@@ -64,7 +61,30 @@ transaction(
 
         let deposit <- vaultRef.withdraw(amount: contributionAmount) as! @FlowToken.Vault
         circleRef.join(member: signer.address, deposit: <- deposit)
+    }
+}
+`;
 
+const REGISTER_CIRCLE_TX = `
+import ChamaCircle from 0xChamaCircle
+import ChamaManager from 0xChamaManager
+
+transaction(circleId: UInt64, name: String) {
+    prepare(signer: auth(Storage) &Account) {
+        let storagePath = StoragePath(identifier: "chamaCircle_".concat(circleId.toString()))
+            ?? panic("Could not create circle storage path")
+
+        let circleRef = signer.storage.borrow<&ChamaCircle.Circle>(from: storagePath)
+            ?? panic("Could not borrow circle from signer storage")
+
+        let state = circleRef.getState()
+
+        pre {
+            state.circleId == circleId: "Circle ID does not match stored circle"
+            state.config.name == name: "Provided circle name does not match stored circle"
+        }
+
+        ChamaManager.registerCircle(circleId: circleId, name: name, host: signer.address)
         ChamaManager.registerMember(circleId: circleId, member: signer.address)
     }
 }
@@ -146,6 +166,20 @@ export default function CreateCirclePage() {
       const createdEvent = txResult.events?.find(
         (e: any) => e.type.includes('ChamaCircle.CircleCreated')
       );
+
+      if (createdEvent) {
+        const newCircleId = String(createdEvent.data.circleId);
+        const registerTxId = await sponsoredMutate({
+          cadence: REGISTER_CIRCLE_TX,
+          args: (arg: any, t: any) => [
+            arg(newCircleId, t.UInt64),
+            arg(name, t.String),
+          ],
+          limit: 9999,
+        });
+        await fcl.tx(registerTxId).onceSealed();
+      }
+
       showToast({ status: 'sealed', message: 'Circle created successfully!', txId });
 
       // Fire-and-forget: record circle_created receipt to IPFS + on-chain

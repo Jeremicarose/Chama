@@ -62,9 +62,14 @@ export async function recordReceiptClient(
   receipt: ReceiptInput,
 ): Promise<string | null> {
   try {
+    const magicIdToken = await getMagicIdToken();
     const response = await fetch('/api/receipts', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-chama-session': getBrowserSessionToken(),
+        ...(magicIdToken ? { Authorization: `Bearer ${magicIdToken}` } : {}),
+      },
       body: JSON.stringify({
         ...receipt,
         previousReceiptCID: receipt.previousReceiptCID || null,
@@ -84,3 +89,5 @@ export async function recordReceiptClient(
     return null;
   }
 }
+import { getBrowserSessionToken } from '@/lib/browser-session';
+import { getMagicIdToken } from '@/lib/magic-auth';

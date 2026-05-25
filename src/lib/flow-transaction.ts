@@ -37,7 +37,9 @@
 // =============================================================================
 
 import { fcl } from '@/lib/flow-config';
-import { getMagicAuthorization } from '@/lib/magic-auth';
+import { publicEnv } from '@/lib/env';
+import { getMagicAuthorization, getMagicIdToken } from '@/lib/magic-auth';
+import { getBrowserSessionToken } from '@/lib/browser-session';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -80,8 +82,8 @@ interface CompositeSignature {
 // which account is the payer when constructing the transaction.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ADMIN_ADDRESS = process.env.NEXT_PUBLIC_FLOW_ADMIN_ADDRESS || '';
-const ADMIN_KEY_INDEX = parseInt(process.env.NEXT_PUBLIC_FLOW_ADMIN_KEY_INDEX || '0', 10);
+const ADMIN_ADDRESS = publicEnv.flowAdminAddress || '';
+const ADMIN_KEY_INDEX = publicEnv.flowAdminKeyIndex;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Server Payer Authorization Function
@@ -107,10 +109,18 @@ function serverPayerAuthz(account: any) {
     keyId: ADMIN_KEY_INDEX,
     tempId: `${ADMIN_ADDRESS}-${ADMIN_KEY_INDEX}`,
     signingFunction: async (signable: Signable): Promise<CompositeSignature> => {
+      const currentUser = await fcl.currentUser.snapshot();
+      const magicIdToken = await getMagicIdToken();
+
       // POST the message to our server for signing
       const response = await fetch('/api/sign-as-payer', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-chama-session': getBrowserSessionToken(),
+          ...(currentUser?.addr ? { 'x-flow-user': currentUser.addr } : {}),
+          ...(magicIdToken ? { Authorization: `Bearer ${magicIdToken}` } : {}),
+        },
         body: JSON.stringify({ message: signable.message }),
       });
 

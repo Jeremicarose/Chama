@@ -27,17 +27,36 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { uploadReceipt, type ReceiptData } from '@/lib/receipt-service';
+import { assertAllowedOrigin, getRequestIp, rateLimit } from '@/lib/api-security';
 
 export async function POST(request: NextRequest) {
   try {
+    assertAllowedOrigin(request);
+
+    const sessionToken = request.headers.get('x-chama-session');
+    if (!sessionToken || sessionToken.length < 12) {
+      return NextResponse.json(
+        { error: 'Missing session token.' },
+        { status: 401 },
+      );
+    }
+
+    const limiter = rateLimit(`receipt:${getRequestIp(request)}:${sessionToken}`, 60);
+    if (!limiter.allowed) {
+      return NextResponse.json(
+        { error: 'Rate limit exceeded for receipt uploads.' },
+        { status: 429 },
+      );
+    }
+
     const body = await request.json();
 
     // Validate required fields
     const { circleId, action, actor, timestamp, details, previousReceiptCID, transactionId } = body;
 
-    if (!circleId || !action || !actor || !timestamp) {
+    if (!circleId || !action || !actor || !timestamp || typeof details !== 'object') {
       return NextResponse.json(
-        { error: 'Missing required fields: circleId, action, actor, timestamp' },
+        { error: 'Missing or invalid required fields: circleId, action, actor, timestamp, details' },
         { status: 400 },
       );
     }

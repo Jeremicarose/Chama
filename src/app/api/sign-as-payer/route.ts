@@ -33,6 +33,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ec as EC } from 'elliptic';
 import { SHA3 } from 'sha3';
+import { serverEnv } from '@/lib/env';
+import {
+  assertAllowedOrigin,
+  assertFlowNetworkAllowedForSponsorship,
+  getRequestIp,
+  rateLimit,
+} from '@/lib/api-security';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Environment Variables
@@ -46,9 +53,9 @@ import { SHA3 } from 'sha3';
 //   https://testnet-faucet.onflow.org/
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ADMIN_ADDRESS = process.env.FLOW_ADMIN_ADDRESS || '';
-const ADMIN_PRIVATE_KEY = process.env.FLOW_ADMIN_PRIVATE_KEY || '';
-const ADMIN_KEY_INDEX = parseInt(process.env.FLOW_ADMIN_KEY_INDEX || '0', 10);
+const ADMIN_ADDRESS = serverEnv.flowAdminAddress || '';
+const ADMIN_PRIVATE_KEY = serverEnv.flowAdminPrivateKey || '';
+const ADMIN_KEY_INDEX = serverEnv.flowAdminKeyIndex;
 
 // Initialize the ECDSA curve once (reused across requests)
 const p256 = new EC('p256');
@@ -107,6 +114,9 @@ function signWithKey(messageHex: string): string {
 
 export async function POST(request: NextRequest) {
   try {
+    assertAllowedOrigin(request);
+    assertFlowNetworkAllowedForSponsorship();
+
     // Validate that admin credentials are configured
     if (!ADMIN_ADDRESS || !ADMIN_PRIVATE_KEY) {
       return NextResponse.json(
@@ -115,10 +125,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const sessionToken = request.headers.get('x-chama-session');
+    const flowUser = request.headers.get('x-flow-user');
+    if (!sessionToken || sessionToken.length < 12) {
+      return NextResponse.json(
+        { error: 'Missing session token.' },
+        { status: 401 },
+      );
+    }
+
+    const limiter = rateLimit(
+      `payer:${getRequestIp(request)}:${flowUser || sessionToken}`,
+      30,
+    );
+    if (!limiter.allowed) {
+      return NextResponse.json(
+        { error: 'Rate limit exceeded for sponsored transactions.' },
+        { status: 429 },
+      );
+    }
+
     const body = await request.json();
     const { message } = body;
 
-    if (!message || typeof message !== 'string') {
+    if (!message || typeof message !== 'string' || !/^[0-9a-fA-F]+$/.test(message)) {
       return NextResponse.json(
         { error: 'Missing or invalid "message" field.' },
         { status: 400 },

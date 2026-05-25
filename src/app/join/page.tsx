@@ -80,7 +80,6 @@ access(all) fun main(hostAddress: Address, circleId: UInt64): AnyStruct {
 
 const JOIN_CIRCLE_TX = `
 import ChamaCircle from 0xChamaCircle
-import ChamaManager from 0xChamaManager
 import FungibleToken from 0xFungibleToken
 import FlowToken from 0xFlowToken
 
@@ -102,6 +101,28 @@ transaction(hostAddress: Address, circleId: UInt64) {
         let deposit <- vaultRef.withdraw(amount: depositAmount) as! @FlowToken.Vault
 
         circleRef.join(member: signer.address, deposit: <- deposit)
+    }
+}
+`;
+
+const REGISTER_MEMBER_TX = `
+import ChamaCircle from 0xChamaCircle
+import ChamaManager from 0xChamaManager
+
+transaction(hostAddress: Address, circleId: UInt64) {
+    prepare(signer: auth(Storage) &Account) {
+        let publicPath = PublicPath(identifier: "chamaCircle_".concat(circleId.toString()))
+            ?? panic("Could not construct public path for circle")
+
+        let circleRef = getAccount(hostAddress)
+            .capabilities.get<&ChamaCircle.Circle>(publicPath)
+            .borrow()
+            ?? panic("Could not borrow circle from host")
+
+        pre {
+            circleRef.isMember(address: signer.address): "Signer is not a member of the target circle"
+        }
+
         ChamaManager.registerMember(circleId: circleId, member: signer.address)
     }
 }
@@ -254,6 +275,14 @@ export default function MarketplacePage() {
       });
       showToast({ status: 'sealing', message: 'Joining — confirming on-chain...', txId });
       await fcl.tx(txId).onceSealed();
+
+      const registerTxId = await sponsoredMutate({
+        cadence: REGISTER_MEMBER_TX,
+        args: (arg: any, t: any) => [arg(circle.hostAddress, t.Address), arg(circle.circleId, t.UInt64)],
+        limit: 9999,
+      });
+      await fcl.tx(registerTxId).onceSealed();
+
       showToast({ status: 'sealed', message: 'Joined successfully!', txId });
 
       // Fire-and-forget: record join receipt to IPFS + on-chain

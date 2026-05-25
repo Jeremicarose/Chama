@@ -22,24 +22,9 @@
 // =============================================================================
 
 import type { Metadata } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import FlowProvider from '@/components/FlowProvider';
 import Navbar from '@/components/Navbar';
-
-// ── Font Configuration ──
-// variable: creates a CSS custom property (--font-geist-sans) that Tailwind
-// uses via font-sans / font-mono utility classes.
-// subsets: ["latin"] limits the font to Latin characters (smaller download).
-const geistSans = Geist({
-  variable: '--font-geist-sans',
-  subsets: ['latin'],
-});
-
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
-  subsets: ['latin'],
-});
 
 // ── Metadata ──
 // Next.js uses this to generate <title> and <meta> tags.
@@ -65,7 +50,7 @@ export default function RootLayout({
       {/* bg-zinc-50/dark:bg-zinc-950: light/dark background colors.        */}
       {/* ----------------------------------------------------------------- */}
       <body
-        className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased min-h-screen bg-zinc-950 text-zinc-100`}
+        className="font-sans antialiased min-h-screen bg-zinc-950 text-zinc-100"
       >
         {/* FlowProvider initializes FCL config before any child uses it.  */}
         {/* It's a Client Component boundary — children inside can use hooks. */}
