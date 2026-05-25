@@ -26,7 +26,6 @@
 // ============================================================================
 
 import ChamaCircle from "ChamaCircle"
-import ChamaManager from "ChamaManager"
 import FlowToken from "FlowToken"
 import FungibleToken from "FungibleToken"
 
@@ -82,9 +81,5 @@ transaction(hostAddress: Address, circleId: UInt64) {
         //   - Auto-seal if the circle is now full
         circleRef.join(member: signer.address, deposit: <- deposit)
 
-        // ── Step 4: Register in ChamaManager ──
-        //
-        // Enables the dashboard to show "My Circles" for this member.
-        ChamaManager.registerMember(circleId: circleId, member: signer.address)
     }
 }

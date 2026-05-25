@@ -27,7 +27,6 @@
 // ============================================================================
 
 import ChamaCircle from "ChamaCircle"
-import ChamaManager from "ChamaManager"
 import FlowToken from "FlowToken"
 import FungibleToken from "FungibleToken"
 
@@ -88,16 +87,7 @@ transaction(
             .issue<&ChamaCircle.Circle>(storagePath)
         signer.capabilities.publish(cap, at: publicPath)
 
-        // ── Step 5: Register in ChamaManager ──
-        // Makes this circle discoverable via ChamaManager.getAllCircleIds()
-        // and ChamaManager.getCircleHost(circleId)
-        ChamaManager.registerCircle(
-            circleId: circleId,
-            name: name,
-            host: signer.address
-        )
-
-        // ── Step 6: Auto-join creator as Member 1 ──
+        // ── Step 5: Auto-join creator as Member 1 ──
         // The creator puts up the security deposit and gets rotation position 0.
         // This means they receive the payout in Cycle 1.
         //
@@ -116,9 +106,5 @@ transaction(
             ?? panic("Could not borrow circle we just created")
 
         circleRef.join(member: signer.address, deposit: <- deposit)
-
-        // Register creator as a member in the manager
-        ChamaManager.registerMember(circleId: circleId, member: signer.address)
     }
 }
-

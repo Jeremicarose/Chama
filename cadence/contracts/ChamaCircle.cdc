@@ -28,7 +28,12 @@
 import FungibleToken from "FungibleToken"
 import FlowToken from "FlowToken"
 
-access(all) contract ChamaCircle {
+    access(all) contract ChamaCircle {
+
+    access(all) resource interface CirclePublic {
+        access(all) view fun getState(): CircleState
+        access(all) view fun isMember(address: Address): Bool
+    }
 
     // ========================================================================
     // EVENTS
@@ -241,7 +246,7 @@ access(all) contract ChamaCircle {
     //   advanceCycle() which we expose below.
     // ========================================================================
 
-    access(all) resource Circle {
+    access(all) resource Circle: CirclePublic {
         access(all) let circleId: UInt64
         access(all) let config: CircleConfig
 

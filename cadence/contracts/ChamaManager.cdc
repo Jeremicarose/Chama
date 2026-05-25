@@ -29,10 +29,8 @@
 //   - Full circle data is still fetched from the host account's Circle resource
 //
 // SECURITY NOTE:
-//   registerCircle() and registerMember() are access(all) — anyone can call them.
-//   This is intentional for the hackathon: we trust that only the CreateCircle
-//   and JoinCircle transactions call these functions.
-//   In production, you'd gate these with entitlements or an admin capability.
+//   registerCircle() and registerMember() validate consistency against on-chain
+//   circle state so callers cannot forge arbitrary registry entries.
 // ============================================================================
 
 access(all) contract ChamaManager {
@@ -70,6 +68,20 @@ access(all) contract ChamaManager {
     ///   name: Circle name (for event emission — not stored separately)
     ///   host: The account address that stores the Circle resource
     access(all) fun registerCircle(circleId: UInt64, name: String, host: Address) {
+        let publicPath = PublicPath(identifier: "chamaCircle_".concat(circleId.toString()))
+            ?? panic("Could not construct public path")
+
+        let circleRef = getAccount(host)
+            .capabilities.get<&AnyResource{ChamaCircle.CirclePublic}>(publicPath)
+            .borrow()
+            ?? panic("Could not borrow target circle from host")
+
+        let state = circleRef.getState()
+        pre {
+            state.circleId == circleId: "Circle ID mismatch"
+            state.config.name == name: "Circle name mismatch"
+        }
+
         self.circleRegistry[circleId] = host
         emit CircleRegistered(circleId: circleId, name: name, host: host)
     }
@@ -83,13 +95,30 @@ access(all) contract ChamaManager {
     ///   circleId: The circle the member joined
     ///   member: The member's Flow account address
     access(all) fun registerMember(circleId: UInt64, member: Address) {
+        let host = self.circleRegistry[circleId]
+            ?? panic("Circle is not registered")
+
+        let publicPath = PublicPath(identifier: "chamaCircle_".concat(circleId.toString()))
+            ?? panic("Could not construct public path")
+
+        let circleRef = getAccount(host)
+            .capabilities.get<&AnyResource{ChamaCircle.CirclePublic}>(publicPath)
+            .borrow()
+            ?? panic("Could not borrow target circle from host")
+
+        pre {
+            circleRef.isMember(address: member): "Member does not belong to target circle"
+        }
+
         if self.memberCircles[member] == nil {
             self.memberCircles[member] = []
         }
         // Append the circle ID to this member's list.
         // We don't check for duplicates because join() has its own
         // "already a member" pre-condition that prevents double-joining.
-        self.memberCircles[member]!.append(circleId)
+        if !self.memberCircles[member]!.contains(circleId) {
+            self.memberCircles[member]!.append(circleId)
+        }
     }
 
     // ========================================================================
