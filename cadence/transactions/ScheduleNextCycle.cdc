@@ -40,12 +40,9 @@
 // ============================================================================
 
 import FlowTransactionScheduler from "FlowTransactionScheduler"
-import ChamaScheduler from "ChamaScheduler"
 import ChamaCircle from "ChamaCircle"
-import FlowToken from "FlowToken"
-import FungibleToken from "FungibleToken"
 
-transaction(circleId: UInt64, cycleDuration: UFix64) {
+transaction(circleId: UInt64) {
 
     prepare(signer: auth(Storage, Capabilities) &Account) {
 
@@ -65,90 +62,12 @@ transaction(circleId: UInt64, cycleDuration: UFix64) {
             return  // Circle is not active, nothing to schedule
         }
 
-        // ── Get the handler capability ──
-        //
-        // We need an auth capability with FlowTransactionScheduler.Execute.
-        // This was issued in InitHandler.cdc.
-        //
-        // issue() returns a NEW capability each time. For scheduling,
-        // we need one that the scheduler can store and call later.
-        // The capability issued in InitHandler should work, but we
-        // issue a fresh one here to ensure it's valid.
-        let handlerCap = signer.capabilities.storage
-            .issue<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}>(handlerPath)
+        let handlerRef = signer.storage.borrow<&ChamaScheduler.ChamaTransactionHandler>(from: handlerPath)
+            ?? panic("Could not borrow handler — did you run InitHandler?")
 
-        // ── Calculate target timestamp ──
-        // Schedule for cycleDuration seconds from NOW.
-        // On emulator with --block-time 1s, this means ~cycleDuration blocks.
-        let targetTimestamp = getCurrentBlock().timestamp + cycleDuration
-
-        // ── Estimate fees ──
-        //
-        // FlowTransactionScheduler.estimate() returns a struct with:
-        //   - flowFee: UFix64? — the total fee in FLOW
-        //   - timestamp: UFix64? — confirmed execution timestamp
-        //   - error: String? — if estimation failed
-        //
-        // Priority levels:
-        //   High — executes as soon as possible after timestamp
-        //   Medium — standard priority (good for our use case)
-        //   Low — best-effort, may be delayed
-        //
-        // executionEffort: Gas limit estimate. 10000 is generous for
-        // our executeCycle() function (iterate members, transfer funds).
-        let estimate = FlowTransactionScheduler.estimate(
-            data: nil,
-            timestamp: targetTimestamp,
-            priority: FlowTransactionScheduler.Priority.Medium,
-            executionEffort: 5000
-        )
-
-        // ── Pay scheduling fee ──
-        let feeAmount = estimate.flowFee ?? 0.001  // Fallback if estimate returns nil
-        let vaultRef = signer.storage
-            .borrow<auth(FungibleToken.Withdraw) &FlowToken.Vault>(
-                from: /storage/flowTokenVault
-            ) ?? panic("Could not borrow FlowToken vault for fee payment")
-
-        let fees <- vaultRef.withdraw(amount: feeAmount)
-            as! @FlowToken.Vault
-
-        // ── Schedule the transaction ──
-        //
-        // schedule() returns a @ScheduledTransaction resource.
-        // In Cadence, resources MUST be explicitly handled — you can't
-        // ignore a return value that's a resource type (linear types).
-        //
-        // We store it in the signer's account so we can:
-        //   1. Query its status later (scheduledTx.status())
-        //   2. Track which scheduled txs belong to which circle
-        //   3. Satisfy Cadence's "no resource loss" rule
-        //
-        // After scheduling, the Flow protocol will:
-        //   1. Hold the fee payment
-        //   2. At targetTimestamp, call handlerCap.executeTransaction(id, data)
-        //   3. Emit FlowTransactionScheduler.Executed event
-        let scheduledTx <- FlowTransactionScheduler.schedule(
-            handlerCap: handlerCap,
-            data: nil,
-            timestamp: targetTimestamp,
-            priority: FlowTransactionScheduler.Priority.Medium,
-            executionEffort: 5000,
-            fees: <- fees
-        )
-
-        // Store the scheduled transaction receipt in the signer's account.
-        // Path: /storage/chamaScheduledTx_{circleId}
-        // This lets us check status or cancel if needed.
-        let scheduledTxPath = StoragePath(identifier: "chamaScheduledTx_".concat(circleId.toString()))
-            ?? panic("Could not create scheduled tx storage path")
-
-        // If there's a previous scheduled tx at this path (from a prior cycle),
-        // we need to remove it first to avoid storage collision.
-        if let oldTx <- signer.storage.load<@FlowTransactionScheduler.ScheduledTransaction>(from: scheduledTxPath) {
-            destroy oldTx
+        let scheduled = handlerRef.initializeSchedule(deadline: state.nextDeadline)
+        if !scheduled {
+            panic("Unable to schedule cycle. Scheduler reserve may be depleted.")
         }
-
-        signer.storage.save(<- scheduledTx, to: scheduledTxPath)
     }
 }

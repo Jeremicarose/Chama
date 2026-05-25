@@ -31,6 +31,8 @@
 
 import FlowTransactionScheduler from "FlowTransactionScheduler"
 import ChamaCircle from "ChamaCircle"
+import FlowToken from "FlowToken"
+import FungibleToken from "FungibleToken"
 
 access(all) contract ChamaScheduler {
 
@@ -48,6 +50,9 @@ access(all) contract ChamaScheduler {
         cycle: UInt64,
         scheduledFor: UFix64
     )
+    access(all) event SchedulerInitialized(circleId: UInt64, feeReserve: UFix64)
+    access(all) event SchedulerRecoveryNeeded(circleId: UInt64, cycle: UInt64, reason: String)
+    access(all) event SchedulerRecovered(circleId: UInt64, cycle: UInt64, scheduledFor: UFix64)
 
     // ========================================================================
     // STORAGE PATHS (for getViews/resolveView)
@@ -55,6 +60,7 @@ access(all) contract ChamaScheduler {
 
     access(all) let HandlerStoragePathPrefix: String
     access(all) let HandlerPublicPathPrefix: String
+    access(all) let ScheduledTxStoragePathPrefix: String
 
     // ========================================================================
     // TRANSACTION HANDLER RESOURCE
@@ -79,6 +85,8 @@ access(all) contract ChamaScheduler {
         // Pre-authorized capability to the Circle resource.
         // Issued by the circle host during InitHandler transaction.
         access(self) let circleCap: Capability<&ChamaCircle.Circle>
+        access(self) let feeVault: @FlowToken.Vault
+        access(self) var currentScheduledTx: @FlowTransactionScheduler.ScheduledTransaction?
 
         // Storage path where THIS handler is stored (for getViews)
         access(self) let storagePath: StoragePath
@@ -86,10 +94,13 @@ access(all) contract ChamaScheduler {
 
         init(
             circleCap: Capability<&ChamaCircle.Circle>,
+            feeVault: @FlowToken.Vault,
             storagePath: StoragePath,
             publicPath: PublicPath
         ) {
             self.circleCap = circleCap
+            self.feeVault <- feeVault
+            self.currentScheduledTx <- nil
             self.storagePath = storagePath
             self.publicPath = publicPath
         }
@@ -136,12 +147,126 @@ access(all) contract ChamaScheduler {
             // If circle is still active, emit event for re-scheduling
             let newState = circle.getState()
             if newState.status == ChamaCircle.CircleStatus.ACTIVE {
-                emit NextCycleScheduled(
-                    circleId: state.circleId,
-                    cycle: newState.currentCycle,
-                    scheduledFor: newState.nextDeadline
+                let result = self.scheduleNextCycle(deadline: newState.nextDeadline)
+                if result.success {
+                    emit NextCycleScheduled(
+                        circleId: state.circleId,
+                        cycle: newState.currentCycle,
+                        scheduledFor: result.scheduledFor
+                    )
+                } else {
+                    emit SchedulerRecoveryNeeded(
+                        circleId: state.circleId,
+                        cycle: newState.currentCycle,
+                        reason: result.reason
+                    )
+                }
+            }
+        }
+
+        access(self) struct ScheduleResult {
+            access(all) let success: Bool
+            access(all) let scheduledFor: UFix64
+            access(all) let reason: String
+
+            init(success: Bool, scheduledFor: UFix64, reason: String) {
+                self.success = success
+                self.scheduledFor = scheduledFor
+                self.reason = reason
+            }
+        }
+
+        access(self) fun estimateFeeForTimestamp(_ timestamp: UFix64): FlowTransactionScheduler.EstimatedScheduledTransaction {
+            return FlowTransactionScheduler.estimate(
+                data: nil,
+                timestamp: timestamp,
+                priority: FlowTransactionScheduler.Priority.Medium,
+                executionEffort: 5000
+            )
+        }
+
+        access(self) fun scheduleNextCycle(deadline: UFix64): ScheduleResult {
+            let handlerCap = self.owner!.capabilities.storage
+                .issue<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}>(self.storagePath)
+
+            let estimate = self.estimateFeeForTimestamp(deadline)
+            let targetTimestamp = estimate.timestamp ?? deadline
+            let feeAmount = estimate.flowFee ?? 0.001
+
+            if self.feeVault.balance < feeAmount {
+                return ScheduleResult(
+                    success: false,
+                    scheduledFor: deadline,
+                    reason: "Insufficient scheduler fee reserve"
                 )
             }
+
+            let fees <- self.feeVault.withdraw(amount: feeAmount)
+            let scheduledTx <- FlowTransactionScheduler.schedule(
+                handlerCap: handlerCap,
+                data: nil,
+                timestamp: targetTimestamp,
+                priority: FlowTransactionScheduler.Priority.Medium,
+                executionEffort: 5000,
+                fees: <- fees
+            )
+
+            if let oldTx <- self.currentScheduledTx <- scheduledTx {
+                destroy oldTx
+            }
+
+            return ScheduleResult(success: true, scheduledFor: targetTimestamp, reason: "")
+        }
+
+        access(all) fun initializeSchedule(deadline: UFix64): Bool {
+            let result = self.scheduleNextCycle(deadline: deadline)
+            return result.success
+        }
+
+        access(all) fun recoverSchedule(): Bool {
+            let circle = self.circleCap.borrow()
+                ?? panic("Could not borrow circle via capability — was the circle moved or destroyed?")
+            let state = circle.getState()
+
+            pre {
+                state.status == ChamaCircle.CircleStatus.ACTIVE: "Can only recover schedules for active circles"
+            }
+
+            let result = self.scheduleNextCycle(deadline: state.nextDeadline)
+            if result.success {
+                emit SchedulerRecovered(
+                    circleId: state.circleId,
+                    cycle: state.currentCycle,
+                    scheduledFor: result.scheduledFor
+                )
+            } else {
+                emit SchedulerRecoveryNeeded(
+                    circleId: state.circleId,
+                    cycle: state.currentCycle,
+                    reason: result.reason
+                )
+            }
+            return result.success
+        }
+
+        access(all) view fun getFeeReserveBalance(): UFix64 {
+            return self.feeVault.balance
+        }
+
+        access(all) view fun hasScheduledTransaction(): Bool {
+            return self.currentScheduledTx != nil
+        }
+
+        access(all) view fun currentScheduledTransactionId(): UInt64? {
+            if let scheduledTx = self.currentScheduledTx {
+                return scheduledTx.id
+            }
+            return nil
+        }
+
+        destroy() {
+            destroy self.feeVault
+            destroy self.currentScheduledTx
         }
 
         // ────────────────────────────────────────────────────────────────
@@ -175,11 +300,13 @@ access(all) contract ChamaScheduler {
 
     access(all) fun createHandler(
         circleCap: Capability<&ChamaCircle.Circle>,
+        feeVault: @FlowToken.Vault,
         storagePath: StoragePath,
         publicPath: PublicPath
     ): @ChamaTransactionHandler {
         return <- create ChamaTransactionHandler(
             circleCap: circleCap,
+            feeVault: <- feeVault,
             storagePath: storagePath,
             publicPath: publicPath
         )
@@ -188,5 +315,6 @@ access(all) contract ChamaScheduler {
     init() {
         self.HandlerStoragePathPrefix = "chamaHandler_"
         self.HandlerPublicPathPrefix = "chamaHandler_"
+        self.ScheduledTxStoragePathPrefix = "chamaScheduledTx_"
     }
 }

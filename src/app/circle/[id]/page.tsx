@@ -46,6 +46,30 @@ access(all) fun main(hostAddress: Address, circleId: UInt64): AnyStruct {
 }
 `;
 
+const GET_SCHEDULER_STATE_SCRIPT = `
+import ChamaScheduler from 0xChamaScheduler
+
+access(all) fun main(hostAddress: Address, circleId: UInt64): AnyStruct? {
+    let host = getAccount(hostAddress)
+    let publicPath = PublicPath(identifier: "chamaHandler_".concat(circleId.toString()))
+        ?? panic("Could not construct handler public path")
+
+    let handlerRef = host.capabilities
+        .borrow<&ChamaScheduler.ChamaTransactionHandler>(publicPath)
+
+    if handlerRef == nil {
+        return nil
+    }
+
+    return {
+        "initialized": true,
+        "hasScheduledTransaction": handlerRef!.hasScheduledTransaction(),
+        "feeReserveBalance": handlerRef!.getFeeReserveBalance(),
+        "scheduledTransactionId": handlerRef!.currentScheduledTransactionId()
+    }
+}
+`;
+
 // =============================================================================
 // Cadence Transactions
 // =============================================================================
@@ -145,6 +169,104 @@ transaction(hostAddress: Address, circleId: UInt64) {
 }
 `;
 
+const INIT_HANDLER_TX = `
+import ChamaCircle from 0xChamaCircle
+import ChamaScheduler from 0xChamaScheduler
+import FlowTransactionScheduler from 0xFlowTransactionScheduler
+import FlowToken from 0xFlowToken
+import FungibleToken from 0xFungibleToken
+
+transaction(circleId: UInt64, schedulerFeeReserve: UFix64) {
+    prepare(signer: auth(Storage, Capabilities) &Account) {
+        let circlePath = StoragePath(identifier: "chamaCircle_".concat(circleId.toString()))
+            ?? panic("Could not create circle storage path")
+
+        let handlerPath = StoragePath(identifier: "chamaHandler_".concat(circleId.toString()))
+            ?? panic("Could not create handler storage path")
+
+        let handlerPublicPath = PublicPath(identifier: "chamaHandler_".concat(circleId.toString()))
+            ?? panic("Could not create handler public path")
+
+        if signer.storage.borrow<&AnyResource>(from: handlerPath) != nil {
+            return
+        }
+
+        let circleCap = signer.capabilities.storage.issue<&ChamaCircle.Circle>(circlePath)
+
+        let vaultRef = signer.storage
+            .borrow<auth(FungibleToken.Withdraw) &FlowToken.Vault>(from: /storage/flowTokenVault)
+            ?? panic("Could not borrow FlowToken vault for scheduler reserve")
+
+        let feeReserve <- vaultRef.withdraw(amount: schedulerFeeReserve) as! @FlowToken.Vault
+
+        let handler <- ChamaScheduler.createHandler(
+            circleCap: circleCap,
+            feeVault: <- feeReserve,
+            storagePath: handlerPath,
+            publicPath: handlerPublicPath
+        )
+
+        signer.storage.save(<- handler, to: handlerPath)
+
+        let _ = signer.capabilities.storage
+            .issue<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}>(handlerPath)
+
+        let publicCap = signer.capabilities.storage
+            .issue<&{FlowTransactionScheduler.TransactionHandler}>(handlerPath)
+        signer.capabilities.publish(publicCap, at: handlerPublicPath)
+    }
+}
+`;
+
+const SCHEDULE_NEXT_CYCLE_TX = `
+import ChamaScheduler from 0xChamaScheduler
+import ChamaCircle from 0xChamaCircle
+
+transaction(circleId: UInt64) {
+    prepare(signer: auth(Storage, Capabilities) &Account) {
+        let circlePath = StoragePath(identifier: "chamaCircle_".concat(circleId.toString()))
+            ?? panic("Could not create circle storage path")
+        let handlerPath = StoragePath(identifier: "chamaHandler_".concat(circleId.toString()))
+            ?? panic("Could not create handler storage path")
+
+        let circleRef = signer.storage.borrow<&ChamaCircle.Circle>(from: circlePath)
+            ?? panic("Could not borrow circle — is it stored at this path?")
+
+        let state = circleRef.getState()
+        if state.status != ChamaCircle.CircleStatus.ACTIVE {
+            return
+        }
+
+        let handlerRef = signer.storage.borrow<&ChamaScheduler.ChamaTransactionHandler>(from: handlerPath)
+            ?? panic("Could not borrow handler — did you run InitHandler?")
+
+        let scheduled = handlerRef.initializeSchedule(deadline: state.nextDeadline)
+        if !scheduled {
+            panic("Unable to schedule cycle. Scheduler reserve may be depleted.")
+        }
+    }
+}
+`;
+
+const RECOVER_SCHEDULE_TX = `
+import ChamaScheduler from 0xChamaScheduler
+
+transaction(circleId: UInt64) {
+    prepare(signer: auth(Storage) &Account) {
+        let handlerPath = StoragePath(identifier: "chamaHandler_".concat(circleId.toString()))
+            ?? panic("Could not create handler storage path")
+
+        let handlerRef = signer.storage.borrow<&ChamaScheduler.ChamaTransactionHandler>(from: handlerPath)
+            ?? panic("Could not borrow handler — did you run InitHandler?")
+
+        let recovered = handlerRef.recoverSchedule()
+        if !recovered {
+            panic("Schedule recovery failed. Scheduler reserve may be depleted.")
+        }
+    }
+}
+`;
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -174,6 +296,13 @@ interface CircleData {
   nextDeadline: string;
   nextRecipient: string | null;
   latestReceiptCID: string;
+}
+
+interface SchedulerState {
+  initialized: boolean;
+  hasScheduledTransaction: boolean;
+  feeReserveBalance: string;
+  scheduledTransactionId: string | null;
 }
 
 // =============================================================================
@@ -360,10 +489,11 @@ export default function CircleDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
-  const [autoExecuting, setAutoExecuting] = useState(false);
+  const [schedulerLoading, setSchedulerLoading] = useState(false);
   const [cycleJustExecuted, setCycleJustExecuted] = useState(false);
   const [lastPayout, setLastPayout] = useState<{ recipient: string; amount: string; cycle: string; txId: string } | null>(null);
   const [payoutHistory, setPayoutHistory] = useState<CircleActivity[]>([]);
+  const [schedulerState, setSchedulerState] = useState<SchedulerState | null>(null);
   const { formatFiat } = useFlowPrice();
 
   const countdown = useCountdown(circle ? parseFloat(circle.nextDeadline) : 0);
@@ -386,6 +516,12 @@ export default function CircleDetailPage() {
         args: (arg: any, t: any) => [arg(host, t.Address), arg(circleId, t.UInt64)],
       });
       setCircle(state);
+
+      const scheduler: SchedulerState | null = await fcl.query({
+        cadence: GET_SCHEDULER_STATE_SCRIPT,
+        args: (arg: any, t: any) => [arg(host, t.Address), arg(circleId, t.UInt64)],
+      }).catch(() => null);
+      setSchedulerState(scheduler);
       setError(null);
     } catch (err) {
       console.error('Failed to fetch circle:', err);
@@ -421,93 +557,77 @@ export default function CircleDetailPage() {
     : false;
   const contributedCount = circle?.members?.filter((m) => m.hasContributed).length ?? 0;
 
-  // ── Auto-execute payout when ALL members have contributed ──
-  // The payout fires as soon as every member has contributed for this cycle.
-  // This matches the user's expectation: "all contributed → payout happens".
-  // A ref tracks which cycle we already executed to prevent double-fires.
-  const executedCycleRef = React.useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!allContributed) return;
-    if (!circle || circle.status.rawValue !== '1') return;
-    if (!hostAddress || !user.loggedIn) return;
-    if (autoExecuting || actionLoading || cycleJustExecuted) return;
-    // Don't re-execute the same cycle
-    if (executedCycleRef.current === circle.currentCycle) return;
-
-    executedCycleRef.current = circle.currentCycle;
-    setAutoExecuting(true);
-    executePayoutCycle();
-  }, [allContributed, circle?.currentCycle, circle?.status.rawValue, hostAddress, user.loggedIn]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Shared payout execution logic (used by auto-execute and manual execute)
-  async function executePayoutCycle() {
-    if (!hostAddress || !circle) {
-      setAutoExecuting(false);
-      return;
-    }
+  // ── Actions ──
+  async function handleInitializeScheduler() {
+    if (!circle) return;
+    setSchedulerLoading(true);
+    setError(null);
     try {
-      const payoutRecipient = circle.nextRecipient || 'unknown';
-      const payoutAmt = String(parseFloat(circle.config.contributionAmount) * parseInt(circle.config.maxMembers));
-      const payoutCycle = circle.currentCycle;
-
-      showToast({ status: 'pending', message: 'Deadline reached — executing payout...' });
+      const reserve = Math.max(parseFloat(circle.config.contributionAmount) * 0.25, 0.01).toFixed(8);
+      showToast({ status: 'pending', message: 'Initializing scheduler...' });
       const txId = await sponsoredMutate({
-        cadence: EXECUTE_CYCLE_TX,
-        args: (arg: any, t: any) => [arg(hostAddress, t.Address), arg(circleId, t.UInt64)],
+        cadence: INIT_HANDLER_TX,
+        args: (arg: any, t: any) => [
+          arg(circleId, t.UInt64),
+          arg(reserve, t.UFix64),
+        ],
         limit: 9999,
       });
-      showToast({ status: 'sealing', message: 'Executing payout — confirming on-chain...', txId });
+      showToast({ status: 'sealing', message: 'Funding scheduler reserve...', txId });
       await fcl.tx(txId).onceSealed();
-
-      const isYouRecipient = payoutRecipient === user.addr;
-      const toastMsg = isYouRecipient
-        ? `You received ${fmtFlow(payoutAmt)} FLOW! (Cycle ${payoutCycle})`
-        : `${fmtFlow(payoutAmt)} FLOW sent to ${truncAddr(payoutRecipient)} (Cycle ${payoutCycle})`;
-      showToast({ status: 'sealed', message: toastMsg, txId });
-
-      setLastPayout({ recipient: payoutRecipient, amount: payoutAmt, cycle: payoutCycle, txId });
-      setCycleJustExecuted(true);
-      setTimeout(() => setCycleJustExecuted(false), 10000);
-
-      if (hostAddress && user.addr && circle) {
-        recordReceiptClient({
-          circleId,
-          action: 'payout_executed',
-          actor: user.addr,
-          timestamp: new Date().toISOString(),
-          details: {
-            cycle: parseInt(circle.currentCycle),
-            recipient: circle.nextRecipient || 'unknown',
-            amount: payoutAmt,
-            autoExecuted: true,
-          },
-          transactionId: txId,
-          previousReceiptCID: circle.latestReceiptCID || null,
-        }).catch(console.warn);
-      }
-
+      showToast({ status: 'sealed', message: 'Scheduler initialized.', txId });
       await fetchCircle();
     } catch (err: any) {
-      console.warn('Auto-execute cycle failed:', err?.message);
-      await fetchCircle();
+      showToast({ status: 'error', message: err?.message || 'Scheduler initialization failed.' });
+      setError(err?.message || 'Scheduler initialization failed.');
     } finally {
-      setAutoExecuting(false);
+      setSchedulerLoading(false);
     }
   }
 
-  // ── Actions ──
-  async function handleExecuteCycle() {
-    if (!hostAddress || !circle) return;
-    setActionLoading(true);
+  async function handleScheduleCycle() {
+    if (!circle) return;
+    setSchedulerLoading(true);
     setError(null);
     try {
-      await executePayoutCycle();
+      showToast({ status: 'pending', message: 'Scheduling next cycle...' });
+      const txId = await sponsoredMutate({
+        cadence: SCHEDULE_NEXT_CYCLE_TX,
+        args: (arg: any, t: any) => [arg(circleId, t.UInt64)],
+        limit: 9999,
+      });
+      showToast({ status: 'sealing', message: 'Confirming schedule on-chain...', txId });
+      await fcl.tx(txId).onceSealed();
+      showToast({ status: 'sealed', message: 'Next cycle scheduled.', txId });
+      await fetchCircle();
     } catch (err: any) {
-      showToast({ status: 'error', message: err?.message || 'Execute cycle failed.' });
-      setError(err?.message || 'Execute cycle failed.');
+      showToast({ status: 'error', message: err?.message || 'Scheduling failed.' });
+      setError(err?.message || 'Scheduling failed.');
     } finally {
-      setActionLoading(false);
+      setSchedulerLoading(false);
+    }
+  }
+
+  async function handleRecoverSchedule() {
+    if (!circle) return;
+    setSchedulerLoading(true);
+    setError(null);
+    try {
+      showToast({ status: 'pending', message: 'Recovering scheduler...' });
+      const txId = await sponsoredMutate({
+        cadence: RECOVER_SCHEDULE_TX,
+        args: (arg: any, t: any) => [arg(circleId, t.UInt64)],
+        limit: 9999,
+      });
+      showToast({ status: 'sealing', message: 'Recovering schedule on-chain...', txId });
+      await fcl.tx(txId).onceSealed();
+      showToast({ status: 'sealed', message: 'Scheduler recovered.', txId });
+      await fetchCircle();
+    } catch (err: any) {
+      showToast({ status: 'error', message: err?.message || 'Schedule recovery failed.' });
+      setError(err?.message || 'Schedule recovery failed.');
+    } finally {
+      setSchedulerLoading(false);
     }
   }
 
@@ -644,6 +764,9 @@ export default function CircleDetailPage() {
   const hasContributed = currentMember?.hasContributed ?? false;
   const canJoin = isForming && !isMember && user.loggedIn;
   const canContribute = isActive && isMember && !hasContributed;
+  const canManageScheduler = user.addr === hostAddress;
+  const schedulerMissing = isActive && canManageScheduler && (!schedulerState || !schedulerState.initialized);
+  const scheduleMissing = isActive && canManageScheduler && schedulerState?.initialized && !schedulerState.hasScheduledTransaction;
 
   const maxMembers = parseInt(circle.config.maxMembers);
   const memberCount = circle.members.length;
@@ -728,10 +851,24 @@ export default function CircleDetailPage() {
         <StatCard label="Pool Balance" value={`${fmtFlow(circle.poolBalance)} FLOW`} accent hint={formatFiat(parseFloat(circle.poolBalance))} />
         <StatCard label="Cycle" value={`${circle.currentCycle} / ${circle.config.maxMembers}`} />
         <StatCard
-          label="Next Payout"
-          value={isActive ? (allContributed ? 'Ready' : `${contributedCount}/${memberCount}`) : '--'}
-          accent={isActive && allContributed}
-          hint={isActive ? (allContributed ? 'All contributed — executing' : 'Waiting for contributions') : undefined}
+          label="Scheduler"
+          value={
+            !isActive
+              ? '--'
+              : schedulerState?.hasScheduledTransaction
+                ? 'Scheduled'
+                : schedulerState?.initialized
+                  ? 'Needs schedule'
+                  : 'Not ready'
+          }
+          accent={isActive && !!schedulerState?.hasScheduledTransaction}
+          hint={
+            isActive
+              ? schedulerState?.hasScheduledTransaction
+                ? `Reserve ${fmtFlow(schedulerState?.feeReserveBalance || '0')} FLOW`
+                : 'Requires host setup'
+              : undefined
+          }
         />
       </div>
 
@@ -819,8 +956,28 @@ export default function CircleDetailPage() {
           </button>
         )}
 
+        {schedulerMissing && (
+          <button
+            onClick={handleInitializeScheduler}
+            disabled={schedulerLoading}
+            className="w-full rounded-2xl bg-sky-600 py-4 text-sm font-semibold text-white shadow-lg shadow-sky-500/20 transition-all hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {schedulerLoading ? 'Initializing scheduler...' : 'Initialize Scheduler'}
+          </button>
+        )}
+
+        {scheduleMissing && (
+          <button
+            onClick={handleScheduleCycle}
+            disabled={schedulerLoading}
+            className="w-full rounded-2xl bg-sky-600 py-4 text-sm font-semibold text-white shadow-lg shadow-sky-500/20 transition-all hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {schedulerLoading ? 'Scheduling...' : 'Schedule Next Cycle'}
+          </button>
+        )}
+
         {/* Contribution progress — shown when active and not all contributed yet */}
-        {isActive && !allContributed && !autoExecuting && (
+        {isActive && !allContributed && (
           <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/60 p-4">
             <div className="flex items-center justify-between text-sm">
               <span className="text-zinc-400">Contributions this cycle</span>
@@ -840,41 +997,32 @@ export default function CircleDetailPage() {
                 You've contributed — waiting for others
               </p>
             )}
-            {/* Manual execute: only after 3x cycle duration grace period */}
+            {schedulerState?.hasScheduledTransaction ? (
+              <p className="mt-2 text-xs text-sky-400/80">
+                Scheduled payout will execute at the cycle deadline.
+              </p>
+            ) : (
+              <p className="mt-2 text-xs text-amber-400/80">
+                No scheduled transaction is active for this cycle yet.
+              </p>
+            )}
+            {/* Manual recovery: only after 3x cycle duration grace period */}
             {(() => {
-              if (!circle || countdown !== 'EXPIRED' || allContributed || !user.loggedIn) return null;
+              if (!circle || countdown !== 'EXPIRED' || allContributed || !canManageScheduler) return null;
               const deadline = parseFloat(circle.nextDeadline);
               const grace = parseFloat(circle.config.cycleDuration) * 3;
               const now = Date.now() / 1000;
               if (now < deadline + grace) return null;
               return (
                 <button
-                  onClick={handleExecuteCycle}
-                  disabled={actionLoading || autoExecuting}
+                  onClick={handleRecoverSchedule}
+                  disabled={schedulerLoading}
                   className="mt-3 w-full rounded-xl bg-red-600/80 py-2.5 text-xs font-semibold text-white transition-all hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {actionLoading ? 'Executing...' : 'Force execute — penalize non-payers'}
+                  {schedulerLoading ? 'Recovering...' : 'Recover missing schedule'}
                 </button>
               );
             })()}
-          </div>
-        )}
-
-        {/* Auto-executing banner */}
-        {isActive && autoExecuting && (
-          <div className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] py-4 text-sm font-medium text-emerald-400">
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-400" />
-            Executing payout...
-          </div>
-        )}
-
-        {/* All contributed — payout executing automatically */}
-        {isActive && allContributed && !autoExecuting && !cycleJustExecuted && (
-          <div className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] py-4 text-sm font-medium text-emerald-400">
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-            </svg>
-            All members contributed — executing payout...
           </div>
         )}
 
@@ -1058,6 +1206,13 @@ export default function CircleDetailPage() {
             { label: 'Cycle duration', value: fmtDuration(circle.config.cycleDuration) },
             { label: 'Each payout', value: `${fmtFlow(payoutAmount)} FLOW`, accent: true, hint: formatFiat(parseFloat(payoutAmount)) },
             { label: 'Max members', value: circle.config.maxMembers },
+            ...(schedulerState
+              ? [{
+                  label: 'Scheduler reserve',
+                  value: `${fmtFlow(schedulerState.feeReserveBalance)} FLOW`,
+                  hint: schedulerState.hasScheduledTransaction ? 'Scheduled transaction active' : 'No active scheduled transaction',
+                }]
+              : []),
           ].map((row, i) => (
             <div key={row.label} className={`flex items-center justify-between px-4 py-3 ${i > 0 ? 'border-t border-zinc-800/60' : ''}`}>
               <span className="text-sm text-zinc-500">{row.label}</span>

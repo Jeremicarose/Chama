@@ -26,8 +26,10 @@
 import ChamaCircle from "ChamaCircle"
 import ChamaScheduler from "ChamaScheduler"
 import FlowTransactionScheduler from "FlowTransactionScheduler"
+import FlowToken from "FlowToken"
+import FungibleToken from "FungibleToken"
 
-transaction(circleId: UInt64) {
+transaction(circleId: UInt64, schedulerFeeReserve: UFix64) {
 
     prepare(signer: auth(Storage, Capabilities) &Account) {
 
@@ -54,9 +56,17 @@ transaction(circleId: UInt64) {
         let circleCap = signer.capabilities.storage
             .issue<&ChamaCircle.Circle>(circlePath)
 
+        let vaultRef = signer.storage
+            .borrow<auth(FungibleToken.Withdraw) &FlowToken.Vault>(from: /storage/flowTokenVault)
+            ?? panic("Could not borrow FlowToken vault for scheduler reserve")
+
+        let feeReserve <- vaultRef.withdraw(amount: schedulerFeeReserve)
+            as! @FlowToken.Vault
+
         // ── Step 2: Create the handler with the circle capability ──
         let handler <- ChamaScheduler.createHandler(
             circleCap: circleCap,
+            feeVault: <- feeReserve,
             storagePath: handlerPath,
             publicPath: handlerPublicPath
         )
@@ -75,5 +85,7 @@ transaction(circleId: UInt64) {
         let publicCap = signer.capabilities.storage
             .issue<&{FlowTransactionScheduler.TransactionHandler}>(handlerPath)
         signer.capabilities.publish(publicCap, at: handlerPublicPath)
+
+        emit ChamaScheduler.SchedulerInitialized(circleId: circleId, feeReserve: schedulerFeeReserve)
     }
 }
