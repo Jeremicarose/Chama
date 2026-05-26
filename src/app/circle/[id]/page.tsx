@@ -240,7 +240,10 @@ transaction(circleId: UInt64) {
         let handlerRef = signer.storage.borrow<&ChamaScheduler.ChamaTransactionHandler>(from: handlerPath)
             ?? panic("Could not borrow handler — did you run InitHandler?")
 
-        let scheduled = handlerRef.initializeSchedule(deadline: state.nextDeadline)
+        let scheduled = handlerRef.initializeSchedule(
+            deadline: state.nextDeadline,
+            cycleDuration: state.config.cycleDuration
+        )
         if !scheduled {
             panic("Unable to schedule cycle. Scheduler reserve may be depleted.")
         }
@@ -575,7 +578,16 @@ export default function CircleDetailPage() {
       });
       showToast({ status: 'sealing', message: 'Funding scheduler reserve...', txId });
       await fcl.tx(txId).onceSealed();
-      showToast({ status: 'sealed', message: 'Scheduler initialized.', txId });
+
+      const scheduleTxId = await sponsoredMutate({
+        cadence: SCHEDULE_NEXT_CYCLE_TX,
+        args: (arg: any, t: any) => [arg(circleId, t.UInt64)],
+        limit: 9999,
+      });
+      showToast({ status: 'sealing', message: 'Scheduling first cycle...', txId: scheduleTxId });
+      await fcl.tx(scheduleTxId).onceSealed();
+
+      showToast({ status: 'sealed', message: 'Scheduler initialized and first cycle scheduled.', txId: scheduleTxId });
       await fetchCircle();
     } catch (err: any) {
       showToast({ status: 'error', message: err?.message || 'Scheduler initialization failed.' });

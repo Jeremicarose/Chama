@@ -16,8 +16,8 @@ transaction(hostAddress: Address, circleId: UInt64) {
             .borrow()
             ?? panic("Could not borrow circle from host")
 
-        pre {
-            circleRef.isMember(address: signer.address): "Signer is not a member of the target circle"
+        if !circleRef.isMember(address: signer.address) {
+            panic("Signer is not a member of the target circle")
         }
 
         ChamaManager.registerMember(circleId: circleId, member: signer.address)

@@ -36,6 +36,24 @@ import FungibleToken from "FungibleToken"
 
 access(all) contract ChamaScheduler {
 
+    access(all) struct ScheduleResult {
+        access(all) let success: Bool
+        access(all) let scheduledFor: UFix64
+        access(all) let reason: String
+
+        init(success: Bool, scheduledFor: UFix64, reason: String) {
+            self.success = success
+            self.scheduledFor = scheduledFor
+            self.reason = reason
+        }
+    }
+
+    access(all) resource interface ChamaTransactionHandlerPublic {
+        access(all) view fun getFeeReserveBalance(): UFix64
+        access(all) view fun hasScheduledTransaction(): Bool
+        access(all) view fun currentScheduledTransactionId(): UInt64?
+    }
+
     // ========================================================================
     // EVENTS
     // ========================================================================
@@ -80,13 +98,17 @@ access(all) contract ChamaScheduler {
     //   that can be borrowed without additional auth checks.
     // ========================================================================
 
-    access(all) resource ChamaTransactionHandler: FlowTransactionScheduler.TransactionHandler {
+    access(all) resource ChamaTransactionHandler:
+        FlowTransactionScheduler.TransactionHandler,
+        ChamaTransactionHandlerPublic {
 
         // Pre-authorized capability to the Circle resource.
         // Issued by the circle host during InitHandler transaction.
         access(self) let circleCap: Capability<&ChamaCircle.Circle>
+        access(self) var schedulerCapability: Capability<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}>?
         access(self) let feeVault: @FlowToken.Vault
         access(self) var currentScheduledTx: @FlowTransactionScheduler.ScheduledTransaction?
+        access(self) var currentScheduledTxId: UInt64?
 
         // Storage path where THIS handler is stored (for getViews)
         access(self) let storagePath: StoragePath
@@ -99,8 +121,10 @@ access(all) contract ChamaScheduler {
             publicPath: PublicPath
         ) {
             self.circleCap = circleCap
+            self.schedulerCapability = nil
             self.feeVault <- feeVault
             self.currentScheduledTx <- nil
+            self.currentScheduledTxId = nil
             self.storagePath = storagePath
             self.publicPath = publicPath
         }
@@ -164,16 +188,10 @@ access(all) contract ChamaScheduler {
             }
         }
 
-        access(self) struct ScheduleResult {
-            access(all) let success: Bool
-            access(all) let scheduledFor: UFix64
-            access(all) let reason: String
-
-            init(success: Bool, scheduledFor: UFix64, reason: String) {
-                self.success = success
-                self.scheduledFor = scheduledFor
-                self.reason = reason
-            }
+        access(all) fun configureSchedulerCapability(
+            _ capability: Capability<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}>
+        ) {
+            self.schedulerCapability = capability
         }
 
         access(self) fun estimateFeeForTimestamp(_ timestamp: UFix64): FlowTransactionScheduler.EstimatedScheduledTransaction {
@@ -185,9 +203,19 @@ access(all) contract ChamaScheduler {
             )
         }
 
+        access(self) view fun currentTimestamp(): UFix64 {
+            return getCurrentBlock().timestamp
+        }
+
         access(self) fun scheduleNextCycle(deadline: UFix64): ScheduleResult {
-            let handlerCap = self.owner!.capabilities.storage
-                .issue<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}>(self.storagePath)
+            if self.schedulerCapability == nil {
+                return ScheduleResult(
+                    success: false,
+                    scheduledFor: deadline,
+                    reason: "Scheduler capability is not configured"
+                )
+            }
+            let handlerCap = self.schedulerCapability!
 
             let estimate = self.estimateFeeForTimestamp(deadline)
             let targetTimestamp = estimate.timestamp ?? deadline
@@ -201,7 +229,7 @@ access(all) contract ChamaScheduler {
                 )
             }
 
-            let fees <- self.feeVault.withdraw(amount: feeAmount)
+            let fees <- self.feeVault.withdraw(amount: feeAmount) as! @FlowToken.Vault
             let scheduledTx <- FlowTransactionScheduler.schedule(
                 handlerCap: handlerCap,
                 data: nil,
@@ -210,16 +238,24 @@ access(all) contract ChamaScheduler {
                 executionEffort: 5000,
                 fees: <- fees
             )
+            let scheduledTxId = scheduledTx.id
 
             if let oldTx <- self.currentScheduledTx <- scheduledTx {
                 destroy oldTx
             }
+            self.currentScheduledTxId = scheduledTxId
 
             return ScheduleResult(success: true, scheduledFor: targetTimestamp, reason: "")
         }
 
-        access(all) fun initializeSchedule(deadline: UFix64): Bool {
-            let result = self.scheduleNextCycle(deadline: deadline)
+        access(all) fun initializeSchedule(deadline: UFix64, cycleDuration: UFix64): Bool {
+            let current = self.currentTimestamp()
+            var requestedDeadline = deadline
+            if deadline <= current {
+                requestedDeadline = current + cycleDuration
+            }
+
+            let result = self.scheduleNextCycle(deadline: requestedDeadline)
             return result.success
         }
 
@@ -227,12 +263,17 @@ access(all) contract ChamaScheduler {
             let circle = self.circleCap.borrow()
                 ?? panic("Could not borrow circle via capability — was the circle moved or destroyed?")
             let state = circle.getState()
-
-            pre {
-                state.status == ChamaCircle.CircleStatus.ACTIVE: "Can only recover schedules for active circles"
+            if state.status != ChamaCircle.CircleStatus.ACTIVE {
+                panic("Can only recover schedules for active circles")
             }
 
-            let result = self.scheduleNextCycle(deadline: state.nextDeadline)
+            let current = self.currentTimestamp()
+            var recoveryDeadline = state.nextDeadline
+            if state.nextDeadline <= current {
+                recoveryDeadline = current + 1.0
+            }
+
+            let result = self.scheduleNextCycle(deadline: recoveryDeadline)
             if result.success {
                 emit SchedulerRecovered(
                     circleId: state.circleId,
@@ -254,19 +295,11 @@ access(all) contract ChamaScheduler {
         }
 
         access(all) view fun hasScheduledTransaction(): Bool {
-            return self.currentScheduledTx != nil
+            return self.currentScheduledTxId != nil
         }
 
         access(all) view fun currentScheduledTransactionId(): UInt64? {
-            if let scheduledTx = self.currentScheduledTx {
-                return scheduledTx.id
-            }
-            return nil
-        }
-
-        destroy() {
-            destroy self.feeVault
-            destroy self.currentScheduledTx
+            return self.currentScheduledTxId
         }
 
         // ────────────────────────────────────────────────────────────────

@@ -41,6 +41,7 @@
 
 import FlowTransactionScheduler from "FlowTransactionScheduler"
 import ChamaCircle from "ChamaCircle"
+import ChamaScheduler from "ChamaScheduler"
 
 transaction(circleId: UInt64) {
 
@@ -65,7 +66,10 @@ transaction(circleId: UInt64) {
         let handlerRef = signer.storage.borrow<&ChamaScheduler.ChamaTransactionHandler>(from: handlerPath)
             ?? panic("Could not borrow handler — did you run InitHandler?")
 
-        let scheduled = handlerRef.initializeSchedule(deadline: state.nextDeadline)
+        let scheduled = handlerRef.initializeSchedule(
+            deadline: state.nextDeadline,
+            cycleDuration: state.config.cycleDuration
+        )
         if !scheduled {
             panic("Unable to schedule cycle. Scheduler reserve may be depleted.")
         }

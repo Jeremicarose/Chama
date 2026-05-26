@@ -15,10 +15,11 @@ transaction(circleId: UInt64, name: String) {
             ?? panic("Could not borrow circle from signer storage")
 
         let state = circleRef.getState()
-
-        pre {
-            state.circleId == circleId: "Circle ID does not match stored circle"
-            state.config.name == name: "Provided circle name does not match stored circle"
+        if state.circleId != circleId {
+            panic("Circle ID does not match stored circle")
+        }
+        if state.config.name != name {
+            panic("Provided circle name does not match stored circle")
         }
 
         ChamaManager.registerCircle(

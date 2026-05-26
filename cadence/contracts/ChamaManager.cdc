@@ -33,6 +33,8 @@
 //   circle state so callers cannot forge arbitrary registry entries.
 // ============================================================================
 
+import ChamaCircle from "ChamaCircle"
+
 access(all) contract ChamaManager {
 
     // ========================================================================
@@ -72,14 +74,16 @@ access(all) contract ChamaManager {
             ?? panic("Could not construct public path")
 
         let circleRef = getAccount(host)
-            .capabilities.get<&AnyResource{ChamaCircle.CirclePublic}>(publicPath)
+            .capabilities.get<&ChamaCircle.Circle>(publicPath)
             .borrow()
             ?? panic("Could not borrow target circle from host")
 
         let state = circleRef.getState()
-        pre {
-            state.circleId == circleId: "Circle ID mismatch"
-            state.config.name == name: "Circle name mismatch"
+        if state.circleId != circleId {
+            panic("Circle ID mismatch")
+        }
+        if state.config.name != name {
+            panic("Circle name mismatch")
         }
 
         self.circleRegistry[circleId] = host
@@ -102,12 +106,12 @@ access(all) contract ChamaManager {
             ?? panic("Could not construct public path")
 
         let circleRef = getAccount(host)
-            .capabilities.get<&AnyResource{ChamaCircle.CirclePublic}>(publicPath)
+            .capabilities.get<&ChamaCircle.Circle>(publicPath)
             .borrow()
             ?? panic("Could not borrow target circle from host")
 
-        pre {
-            circleRef.isMember(address: member): "Member does not belong to target circle"
+        if !circleRef.isMember(address: member) {
+            panic("Member does not belong to target circle")
         }
 
         if self.memberCircles[member] == nil {

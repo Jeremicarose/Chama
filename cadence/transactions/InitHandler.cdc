@@ -81,11 +81,16 @@ transaction(circleId: UInt64, schedulerFeeReserve: UFix64) {
         let _ = signer.capabilities.storage
             .issue<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}>(handlerPath)
 
+        let schedulerCap = signer.capabilities.storage
+            .issue<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}>(handlerPath)
+
+        let handlerRef = signer.storage.borrow<&ChamaScheduler.ChamaTransactionHandler>(from: handlerPath)
+            ?? panic("Could not borrow handler after storing it")
+        handlerRef.configureSchedulerCapability(schedulerCap)
+
         // Public capability for discovery (no Execute = read-only)
         let publicCap = signer.capabilities.storage
-            .issue<&{FlowTransactionScheduler.TransactionHandler}>(handlerPath)
+            .issue<&{ChamaScheduler.ChamaTransactionHandlerPublic}>(handlerPath)
         signer.capabilities.publish(publicCap, at: handlerPublicPath)
-
-        emit ChamaScheduler.SchedulerInitialized(circleId: circleId, feeReserve: schedulerFeeReserve)
     }
 }

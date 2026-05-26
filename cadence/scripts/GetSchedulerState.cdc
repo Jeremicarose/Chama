@@ -6,7 +6,7 @@ access(all) fun main(hostAddress: Address, circleId: UInt64): AnyStruct? {
         ?? panic("Could not construct handler public path")
 
     let handlerRef = host.capabilities
-        .borrow<&ChamaScheduler.ChamaTransactionHandler>(publicPath)
+        .borrow<&{ChamaScheduler.ChamaTransactionHandlerPublic}>(publicPath)
 
     if handlerRef == nil {
         return nil
