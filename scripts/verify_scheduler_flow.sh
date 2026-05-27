@@ -6,6 +6,7 @@ NETWORK="${NETWORK:-emulator}"
 HOST_ADDRESS="0xf8d6e0586b0a20c7"
 CIRCLE_NAME="${CIRCLE_NAME:-Scheduler Test}"
 CIRCLE_ID="${CIRCLE_ID:-1}"
+SLEEP_AFTER_SCHEDULE="${SLEEP_AFTER_SCHEDULE:-15}"
 
 run_flow() {
   flow "$@" --network "$NETWORK" --output json
@@ -25,6 +26,12 @@ assert_no_error() {
     echo "Verification failed: $message"
     exit 1
   fi
+}
+
+extract_circle_field() {
+  local json="$1"
+  local name="$2"
+  printf '%s' "$json" | jq -r --arg name "$name" '.value.value.fields[] | select(.name==$name) | .value.value'
 }
 
 log "Checking current circle count"
@@ -74,7 +81,7 @@ log "Inspecting active circle state"
 CIRCLE_STATE_JSON="$(run_flow scripts execute cadence/scripts/GetCircleState.cdc \
   --args-json "[{\"type\":\"Address\",\"value\":\"${HOST_ADDRESS}\"},{\"type\":\"UInt64\",\"value\":\"${ACTUAL_CIRCLE_ID}\"}]")"
 STATUS_RAW="$(printf '%s' "$CIRCLE_STATE_JSON" | jq -r '.value.value.fields[] | select(.name=="status") | .value.value.fields[] | select(.name=="rawValue") | .value.value')"
-CURRENT_CYCLE="$(printf '%s' "$CIRCLE_STATE_JSON" | jq -r '.value.value.fields[] | select(.name=="currentCycle") | .value.value')"
+CURRENT_CYCLE="$(extract_circle_field "$CIRCLE_STATE_JSON" "currentCycle")"
 
 if [[ "$STATUS_RAW" != "1" || "$CURRENT_CYCLE" != "1" ]]; then
   printf '%s\n' "$CIRCLE_STATE_JSON"
@@ -99,4 +106,37 @@ SCHEDULER_STATE_JSON="$(run_flow scripts execute cadence/scripts/GetSchedulerSta
   --args-json "[{\"type\":\"Address\",\"value\":\"${HOST_ADDRESS}\"},{\"type\":\"UInt64\",\"value\":\"${ACTUAL_CIRCLE_ID}\"}]")"
 printf '%s\n' "$SCHEDULER_STATE_JSON"
 
-echo "Sequential scheduler verification completed for circle ${ACTUAL_CIRCLE_ID}."
+HAS_SCHEDULED_TX="$(printf '%s' "$SCHEDULER_STATE_JSON" | jq -r '.value.value[] | select(.key.value=="hasScheduledTransaction") | .value.value.value')"
+SCHEDULED_TX_ID="$(printf '%s' "$SCHEDULER_STATE_JSON" | jq -r '.value.value[] | select(.key.value=="scheduledTransactionId") | .value.value.value // empty')"
+
+if [[ "$HAS_SCHEDULED_TX" != "true" || -z "$SCHEDULED_TX_ID" ]]; then
+  echo "Scheduler did not produce an active scheduled transaction"
+  exit 1
+fi
+
+log "Waiting ${SLEEP_AFTER_SCHEDULE}s for scheduled execution"
+sleep "$SLEEP_AFTER_SCHEDULE"
+
+log "Re-checking circle state after scheduled execution window"
+POST_EXEC_CIRCLE_JSON="$(run_flow scripts execute cadence/scripts/GetCircleState.cdc \
+  --args-json "[{\"type\":\"Address\",\"value\":\"${HOST_ADDRESS}\"},{\"type\":\"UInt64\",\"value\":\"${ACTUAL_CIRCLE_ID}\"}]")"
+POST_STATUS_RAW="$(printf '%s' "$POST_EXEC_CIRCLE_JSON" | jq -r '.value.value.fields[] | select(.name=="status") | .value.value.fields[] | select(.name=="rawValue") | .value.value')"
+POST_CURRENT_CYCLE="$(extract_circle_field "$POST_EXEC_CIRCLE_JSON" "currentCycle")"
+
+printf '%s\n' "$POST_EXEC_CIRCLE_JSON"
+
+if [[ "$POST_CURRENT_CYCLE" == "$CURRENT_CYCLE" && "$POST_STATUS_RAW" == "$STATUS_RAW" ]]; then
+  echo "Expected scheduler execution to advance the circle state, but the state did not change"
+  exit 1
+fi
+
+log "Fetching recent scheduler and circle events"
+CYCLE_EXEC_EVENTS="$(run_flow events get A.f8d6e0586b0a20c7.ChamaScheduler.CycleExecutedByScheduler --last 20)"
+NEXT_CYCLE_EVENTS="$(run_flow events get A.f8d6e0586b0a20c7.ChamaScheduler.NextCycleScheduled --last 20)"
+CIRCLE_ADVANCED_EVENTS="$(run_flow events get A.f8d6e0586b0a20c7.ChamaCircle.CycleAdvanced --last 20)"
+
+printf '%s\n' "$CYCLE_EXEC_EVENTS"
+printf '%s\n' "$NEXT_CYCLE_EVENTS"
+printf '%s\n' "$CIRCLE_ADVANCED_EVENTS"
+
+echo "Sequential scheduler verification completed through scheduled execution for circle ${ACTUAL_CIRCLE_ID}."
