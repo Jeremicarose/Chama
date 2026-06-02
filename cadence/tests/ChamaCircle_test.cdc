@@ -402,3 +402,19 @@ access(all) fun testTotalCirclesCreatedIncrements() {
     let initialCount = ChamaCircle.totalCirclesCreated
     Test.assert(initialCount >= 0, message: "Counter should be non-negative")
 }
+
+// ============================================================================
+// TEST: Public Query Surface Availability
+// ============================================================================
+//
+// The manager, scripts, and scheduler verification path all depend on the
+// public `CircleState` type remaining available to external Cadence scripts.
+// This lightweight assertion guards that exported type surface directly.
+
+access(all) fun testCircleStateStructTypeExists() {
+    let stateType = Type<ChamaCircle.CircleState>()
+    Test.assert(
+        stateType.identifier.length > 0,
+        message: "CircleState type should remain available for scripts and UI queries"
+    )
+}
