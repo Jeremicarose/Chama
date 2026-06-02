@@ -32,3 +32,22 @@ jobs:
         run: npm run build
         env:
           NEXT_PUBLIC_FLOW_NETWORK: testnet
+
+      - name: Install Flow CLI
+        run: |
+          brew update
+          brew install flow-cli
+
+      - name: Start Flow emulator
+        run: |
+          nohup flow emulator start --block-time 1s --admin-port 8081 --debugger-port 2346 > /tmp/flow-emulator-ci.log 2>&1 &
+          sleep 5
+
+      - name: Deploy contracts to emulator
+        run: flow project deploy --network emulator
+
+      - name: Run Cadence tests
+        run: flow test cadence/tests/ChamaCircle_test.cdc
+
+      - name: Run scheduler flow verification
+        run: SLEEP_AFTER_SCHEDULE=15 ./scripts/verify_scheduler_flow.sh
